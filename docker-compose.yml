@@ -1,0 +1,64 @@
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - MONGODB_URI=mongodb://mongo:27017/webhook-system-v2
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+      - JWT_SECRET=change-this-in-production
+      - METRICS_ENABLED=true
+    depends_on: [mongo, redis]
+    volumes:
+      - ./logs:/app/logs
+    restart: unless-stopped
+
+  mongo:
+    image: mongo:7
+    ports: ['27017:27017']
+    volumes:
+      - mongo_data:/data/db
+
+  redis:
+    image: redis:7-alpine
+    ports: ['6379:6379']
+    command: redis-server --appendonly yes
+    volumes:
+      - redis_data:/data
+
+  # Bull queue dashboard
+  bull-board:
+    image: deadly0/bull-board
+    ports: ['3001:3000']
+    environment:
+      - REDIS_HOST=redis
+      - REDIS_PORT=6379
+    depends_on: [redis]
+
+  # Prometheus
+  prometheus:
+    image: prom/prometheus:latest
+    ports: ['9090:9090']
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+
+  # Grafana
+  grafana:
+    image: grafana/grafana:latest
+    ports: ['3002:3000']
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+    depends_on: [prometheus]
+
+volumes:
+  mongo_data:
+  redis_data:
+  grafana_data:
