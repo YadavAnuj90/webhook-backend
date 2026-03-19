@@ -1,18 +1,47 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'crypto';
-import { Endpoint, EndpointStatus } from './schemas/endpoint.schema';
+import { Endpoint, EndpointStatus, SignatureScheme } from './schemas/endpoint.schema';
+import { SignatureUtil } from '../../utils/signature.util';
+import { Subscription, SubscriptionStatus } from '../billing/schemas/subscription.schema';
 
 @Injectable()
 export class EndpointsService {
-  constructor(@InjectModel(Endpoint.name) private endpointModel: Model<Endpoint>) {}
+  constructor(
+    @InjectModel(Endpoint.name)      private endpointModel: Model<Endpoint>,
+    @InjectModel(Subscription.name)  private subModel:      Model<Subscription>,
+  ) {}
 
-  async create(projectId: string, dto: any) {
+  async create(projectId: string, dto: any, userId?: string) {
     const exists = await this.endpointModel.findOne({ projectId, url: dto.url });
     if (exists) throw new ConflictException('Endpoint with this URL already exists in this project');
-    const secret = `whksec_${randomBytes(24).toString('hex')}`;
-    return this.endpointModel.create({ ...dto, projectId, secret });
+
+    // ─── Quota enforcement ────────────────────────────────────────────────────
+    if (userId) {
+      const sub = await this.subModel.findOne({ userId });
+      if (sub && sub.endpointsLimit > 0) {
+        const currentCount = await this.endpointModel.countDocuments({ projectId });
+        if (currentCount >= sub.endpointsLimit) {
+          throw new ForbiddenException(
+            `Endpoint limit reached (${sub.endpointsLimit} on ${sub.planName} plan). Upgrade to create more.`,
+          );
+        }
+      }
+    }
+
+    let secret: string;
+    let ed25519PublicKey: string | undefined;
+
+    if (dto.signatureScheme === SignatureScheme.ED25519) {
+      const kp = SignatureUtil.generateEd25519KeyPair();
+      secret = kp.privateKey;
+      ed25519PublicKey = kp.publicKey;
+    } else {
+      secret = `whksec_${randomBytes(24).toString('hex')}`;
+    }
+
+    return this.endpointModel.create({ ...dto, projectId, secret, ed25519PublicKey });
   }
 
   async findAll(projectId: string, page = 1, limit = 20, status?: EndpointStatus) {
@@ -45,10 +74,22 @@ export class EndpointsService {
   }
 
   async rotateSecret(id: string, projectId: string) {
-    const secret = `whksec_${randomBytes(24).toString('hex')}`;
-    const ep = await this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { secret }, { new: true });
+    const ep = await this.endpointModel.findOne({ _id: id, projectId });
     if (!ep) throw new NotFoundException('Endpoint not found');
-    return { secret };
+
+    let secret: string;
+    let ed25519PublicKey: string | undefined;
+
+    if (ep.signatureScheme === SignatureScheme.ED25519) {
+      const kp = SignatureUtil.generateEd25519KeyPair();
+      secret = kp.privateKey;
+      ed25519PublicKey = kp.publicKey;
+    } else {
+      secret = `whksec_${randomBytes(24).toString('hex')}`;
+    }
+
+    await this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { secret, ed25519PublicKey }, { new: true });
+    return { secret, publicKey: ed25519PublicKey };
   }
 
   async pause(id: string, projectId: string) {

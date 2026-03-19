@@ -20,4 +20,4 @@ export class ApiKey {
 
 export const ApiKeySchema = SchemaFactory.createForClass(ApiKey);
 ApiKeySchema.index({ userId: 1, isActive: 1 });
-ApiKeySchema.index({ keyHash: 1 }, { unique: true });
+// keyHash unique index already created by @Prop({ unique: true }) — removed duplicate

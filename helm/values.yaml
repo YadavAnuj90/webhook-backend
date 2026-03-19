@@ -1,0 +1,80 @@
+replicaCount: 2
+
+image:
+  repository: ghcr.io/your-org/webhookos
+  pullPolicy: IfNotPresent
+  tag: "latest"
+
+imagePullSecrets: []
+
+service:
+  type: ClusterIP
+  port: 3000
+
+ingress:
+  enabled: true
+  className: nginx
+  annotations:
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "300"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "300"
+  hosts:
+    - host: api.webhookos.example.com
+      paths:
+        - path: /
+          pathType: Prefix
+  tls:
+    - secretName: webhookos-tls
+      hosts:
+        - api.webhookos.example.com
+
+resources:
+  requests:
+    cpu: 250m
+    memory: 256Mi
+  limits:
+    cpu: 1000m
+    memory: 1Gi
+
+autoscaling:
+  enabled: true
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 70
+  targetMemoryUtilizationPercentage: 80
+
+env:
+  PORT: "3000"
+  NODE_ENV: "production"
+
+# Secrets — reference an existing K8s secret
+existingSecret: webhookos-secrets
+# Keys expected in the secret:
+#   MONGODB_URI, REDIS_HOST, REDIS_PORT, REDIS_PASSWORD
+#   JWT_SECRET, JWT_REFRESH_SECRET
+#   RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET, RAZORPAY_WEBHOOK_SECRET
+#   DATADOG_API_KEY, NEW_RELIC_API_KEY, NEW_RELIC_ACCOUNT_ID
+
+livenessProbe:
+  httpGet:
+    path: /api/v1/health/liveness
+    port: 3000
+  initialDelaySeconds: 30
+  periodSeconds: 10
+  failureThreshold: 3
+
+readinessProbe:
+  httpGet:
+    path: /api/v1/health/readiness
+    port: 3000
+  initialDelaySeconds: 15
+  periodSeconds: 5
+  failureThreshold: 3
+
+podAnnotations:
+  prometheus.io/scrape: "true"
+  prometheus.io/path: "/api/v1/metrics"
+  prometheus.io/port: "3000"
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1

@@ -1,5 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { FilterRule } from '../endpoints/schemas/endpoint.schema';
+import { FilterRule } from '../modules/endpoints/schemas/endpoint.schema';
 
 @Injectable()
 export class FilterEngineService {

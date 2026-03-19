@@ -13,8 +13,8 @@ export class EndpointsController {
 
   @Post()
   @ApiOperation({ summary: 'Create endpoint' })
-  create(@Param('projectId') projectId: string, @Body() dto: any) {
-    return this.endpointsService.create(projectId, dto);
+  create(@Param('projectId') projectId: string, @Body() dto: any, @Request() req: any) {
+    return this.endpointsService.create(projectId, dto, req.user?.userId || req.user?.id);
   }
 
   @Get()

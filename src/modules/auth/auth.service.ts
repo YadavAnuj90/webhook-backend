@@ -13,6 +13,8 @@ import { User, UserStatus } from '../users/schemas/user.schema';
 import { ApiKey, ApiKeyDocument } from '../apikeys/schemas/apikey.schema';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
+import { TrialService } from '../billing/trial.service';
+import { BillingEmailService } from '../billing/billing-email.service';
 
 @Injectable()
 export class AuthService {
@@ -24,20 +26,47 @@ export class AuthService {
     private jwtService: JwtService,
     private config: ConfigService,
     private auditService: AuditService,
+    private trialService: TrialService,
+    private emailService: BillingEmailService,
   ) {}
 
   async register(dto: { email: string; password: string; firstName: string; lastName: string }, ip: string) {
     const exists = await this.userModel.findOne({ email: dto.email.toLowerCase() });
     if (exists) throw new ConflictException('Email already registered');
     const passwordHash = await bcrypt.hash(dto.password, 12);
+    const verifyToken = randomBytes(32).toString('hex');
     const user = await this.userModel.create({
       email: dto.email.toLowerCase(), passwordHash,
       firstName: dto.firstName, lastName: dto.lastName,
       fullName: `${dto.firstName} ${dto.lastName}`,
+      emailVerified: false,
+      emailVerifyToken: this.hashToken(verifyToken),
     });
     await this.auditService.log({ userId: user.id, userEmail: user.email, action: AuditAction.REGISTER, ipAddress: ip });
+    // ── Start 10-day free trial on every new registration ──
+    await this.trialService.startTrial(user.id);
+    // ── Send verification email (non-blocking) ──────────────
+    this.emailService.sendVerificationEmail(user.email, user.firstName, verifyToken).catch(() => {});
     const tokens = await this.issueTokens(user, ip, 'Web');
     return { user: this.safeUser(user), ...tokens };
+  }
+
+  async verifyEmail(token: string): Promise<{ message: string }> {
+    const hashed = this.hashToken(token);
+    const user = await this.userModel.findOne({ emailVerifyToken: hashed });
+    if (!user) throw new BadRequestException('Invalid or expired verification token');
+    await this.userModel.findByIdAndUpdate(user.id, { emailVerified: true, emailVerifyToken: null });
+    return { message: 'Email verified successfully' };
+  }
+
+  async resendVerification(userId: string): Promise<{ message: string }> {
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new NotFoundException('User not found');
+    if (user.emailVerified) return { message: 'Email is already verified' };
+    const verifyToken = randomBytes(32).toString('hex');
+    await this.userModel.findByIdAndUpdate(userId, { emailVerifyToken: this.hashToken(verifyToken) });
+    await this.emailService.sendVerificationEmail(user.email, user.firstName, verifyToken);
+    return { message: 'Verification email sent' };
   }
 
   async login(email: string, password: string, ip: string, device = 'Web') {
@@ -102,7 +131,7 @@ export class AuthService {
       passwordResetToken: this.hashToken(token),
       passwordResetExpiry: new Date(Date.now() + 3600_000),
     });
-    this.logger.log(`[DEV] Password reset token for ${email}: ${token}`);
+    this.emailService.sendPasswordReset(user.email, user.firstName, token).catch(() => {});
     return { message: 'If that email exists, a reset link was sent' };
   }
 

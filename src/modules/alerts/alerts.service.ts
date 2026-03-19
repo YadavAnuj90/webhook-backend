@@ -71,7 +71,7 @@ export class AlertsService {
       } else if (rule.channel === 'webhook') {
         await axios.post(rule.channelTarget, { alert: rule.name, data, timestamp: new Date().toISOString() });
       } else if (rule.channel === 'email') {
-        const transporter = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: +process.env.SMTP_PORT || 587, auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
+        const transporter = nodemailer.createTransport({ host: process.env.SMTP_HOST, port: +(process.env.SMTP_PORT || '587'), auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS } });
         await transporter.sendMail({ from: process.env.FROM_EMAIL || 'alerts@webhookos.io', to: rule.channelTarget, subject: `[WebhookOS Alert] ${rule.name}`, text: msg });
       }
     } catch (e) { /* log but don't throw */ }

@@ -1,14 +1,33 @@
-import { NestFactory } from '@nestjs/core';
+import { NestFactory, Reflector } from '@nestjs/core';
 import { AppModule } from './app.module';
 import { ValidationPipe, Logger } from '@nestjs/common';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
+import { SubscriptionGuard } from './common/guards/subscription.guard';
+import { TrialService } from './modules/billing/trial.service';
+import { CreditsService } from './modules/billing/credits.service';
 import helmet from 'helmet';
+
+// ── Sentry (optional — enable with: npm install @sentry/node) ─────────────
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+let Sentry: any = null;
+try { Sentry = require('@sentry/node'); } catch (_) { /* not installed, ok */ }
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true });
   const logger = new Logger('Bootstrap');
+
+  // ── Init Sentry ────────────────────────────────────────────────────────────
+  const sentryDsn = process.env.SENTRY_DSN;
+  if (Sentry && sentryDsn) {
+    Sentry.init({
+      dsn: sentryDsn,
+      environment: process.env.NODE_ENV || 'development',
+      tracesSampleRate: 0.2,
+    });
+    logger.log('✅ Sentry initialized');
+  }
 
   app.use(helmet());
   app.enableCors({ origin: process.env.FRONTEND_URL || 'http://localhost:3001', credentials: true });
@@ -16,6 +35,17 @@ async function bootstrap() {
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
+
+  // ── Global subscription enforcement (trial expiry / payment required) ──────
+  const reflector   = app.get(Reflector);
+  const trialSvc    = app.get(TrialService);
+  app.useGlobalGuards(new SubscriptionGuard(trialSvc, reflector));
+
+  // ── Seed default credit packages if not present ───────────────────────────
+  try {
+    const creditsSvc = app.get(CreditsService);
+    await creditsSvc.seedDefaultPackages();
+  } catch (_) { /* ignore on first boot */ }
 
   const config = new DocumentBuilder()
     .setTitle('WebhookOS API')
@@ -47,7 +77,7 @@ async function bootstrap() {
     .addTag('Transformations', 'Payload transformation rules')
     .addTag('Portal', 'Customer-facing portal token management')
     .addTag('Usage', 'Plan usage and quota reporting')
-    .addTag('Billing', 'Razorpay subscription and payment flows')
+    .addTag('Billing', 'Trial, subscriptions, credits, invoices, reseller billing')
     .addTag('Audit & History', 'Audit log for user and system actions')
     .addTag('Search', 'Global full-text search')
     .addTag('Playground', 'Test webhook delivery and validate signatures')

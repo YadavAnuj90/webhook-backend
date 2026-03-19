@@ -1,0 +1,13 @@
+apiVersion: v2
+name: webhookos
+description: WebhookOS — Production webhook delivery platform
+type: application
+version: 3.0.0
+appVersion: "3.0.0"
+keywords:
+  - webhook
+  - delivery
+  - nestjs
+maintainers:
+  - name: CallerDesk
+    email: dev@callerdesk.io

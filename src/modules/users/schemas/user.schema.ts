@@ -66,6 +66,6 @@ export class User extends Document {
 }
 
 export const UserSchema = SchemaFactory.createForClass(User);
-UserSchema.index({ email: 1 });
+// email unique index already created by @Prop({ unique: true }) — removed duplicate
 UserSchema.index({ role: 1, status: 1 });
 UserSchema.index({ fullName: 'text', email: 'text', company: 'text' });

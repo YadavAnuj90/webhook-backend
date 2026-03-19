@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
-import { Model } from 'mongoose';
+import { Model, Types } from 'mongoose';
 import { AnalyticsBucket } from './schemas/analytics-bucket.schema';
+import { DeliveryLog } from '../delivery/schemas/delivery-log.schema';
 
 export type MetricType = 'delivered' | 'failed' | 'dead' | 'filtered' | 'rateLimited';
 
@@ -11,6 +12,7 @@ export class AnalyticsService {
 
   constructor(
     @InjectModel(AnalyticsBucket.name) private bucketModel: Model<AnalyticsBucket>,
+    @InjectModel(DeliveryLog.name) private deliveryLogModel: Model<DeliveryLog>,
   ) {}
 
   // ─── Record a delivery event ──────────────────────────────────────────────
@@ -192,9 +194,60 @@ export class AnalyticsService {
 
   private emptyStats() {
     return {
-      delivered: 0, failed: 0, dead: 0, filtered: 0, rateLimited: 0,
-      total: 0, successRate: '100.00%', avgLatencyMs: 0,
-      minLatencyMs: 0, maxLatencyMs: 0, periodDays: 30,
+      delivered: 0,
+      failed: 0,
+      dead: 0,
+      filtered: 0,
+      rateLimited: 0,
+      total: 0,
+      successRate: '100.00%',
+      avgLatencyMs: 0,
+      minLatencyMs: 0,
+      maxLatencyMs: 0,
+      periodDays: 30,
+    };
+  }
+
+  // FEATURE 9: Delivery Heatmap API
+  async getHeatmap(projectId: string) {
+    // MongoDB aggregation: group DeliveryLog by dayOfWeek + hour
+    const raw = await this.deliveryLogModel.aggregate([
+      { $match: { projectId: new Types.ObjectId(projectId) } },
+      {
+        $group: {
+          _id: {
+            day: { $dayOfWeek: '$attemptedAt' },
+            hour: { $hour: '$attemptedAt' },
+          },
+          total: { $sum: 1 },
+          success: {
+            $sum: { $cond: [{ $lt: ['$statusCode', 400] }, 1, 0] },
+          },
+          failed: {
+            $sum: { $cond: [{ $gte: ['$statusCode', 400] }, 1, 0] },
+          },
+        },
+      },
+    ]);
+
+    // Build 7x24 matrix
+    const matrix = Array.from({ length: 7 }, () =>
+      Array(24).fill({ total: 0, success: 0, failed: 0 }),
+    );
+
+    raw.forEach((r) => {
+      if (r._id.day >= 1 && r._id.day <= 7 && r._id.hour >= 0 && r._id.hour < 24) {
+        matrix[r._id.day - 1][r._id.hour] = {
+          total: r.total,
+          success: r.success,
+          failed: r.failed,
+        };
+      }
+    });
+
+    return {
+      matrix,
+      days: ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'],
     };
   }
 }

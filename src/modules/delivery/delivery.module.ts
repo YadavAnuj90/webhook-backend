@@ -51,7 +51,10 @@ export class DlqProcessor {
       { name: Endpoint.name, schema: EndpointSchema },
       { name: Project.name, schema: ProjectSchema },
     ]),
-    BullModule.registerQueue({ name: WEBHOOK_QUEUE }, { name: DEAD_LETTER_QUEUE }),
+    BullModule.registerQueue(
+      { name: WEBHOOK_QUEUE },
+      { name: DEAD_LETTER_QUEUE },
+    ),
     EndpointsModule,
     AnalyticsModule,
     MetricsModule,

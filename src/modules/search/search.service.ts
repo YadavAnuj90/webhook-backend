@@ -34,7 +34,7 @@ export class SearchService {
       ...endpoints.map(e => ({ type: 'endpoint', id: e._id, title: e.name, subtitle: e.url, status: e.status })),
       ...events.map(e => ({ type: 'event', id: e._id, title: e.eventType, subtitle: e.status, status: e.status })),
       ...users.map((u: any) => ({ type: 'user', id: u._id, title: `${u.firstName} ${u.lastName}`, subtitle: u.email, status: u.status })),
-      ...auditLogs.map(a => ({ type: 'audit', id: a._id, title: a.action, subtitle: a.createdAt })),
+      ...auditLogs.map(a => ({ type: 'audit', id: a._id, title: a.action, subtitle: (a as any).createdAt })),
     ];
     return { results, total: results.length };
   }

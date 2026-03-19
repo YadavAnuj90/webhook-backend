@@ -10,9 +10,13 @@ export class DeliveryLog extends Document {
   @Prop({ required: true }) success: boolean;
   @Prop() statusCode: number;
   @Prop() responseBody: string;
+  @Prop({ type: Object, default: null }) responseHeaders: Record<string, string>;
   @Prop() latencyMs: number;
   @Prop() errorMessage: string;
   @Prop() attemptedAt: Date;
+
+  // FEATURE 7: A/B Delivery / Canary Rollout
+  @Prop({ default: false }) isCanary: boolean;
 }
 
 export const DeliveryLogSchema = SchemaFactory.createForClass(DeliveryLog);

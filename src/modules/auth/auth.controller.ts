@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Delete, Body, Param, UseGuards, Request, Ip, Headers } from '@nestjs/common';
+import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards, Request, Ip, Headers } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AuthService } from './auth.service';
@@ -100,5 +100,19 @@ export class AuthController {
   @ApiOperation({ summary: 'Revoke API key' })
   revokeApiKey(@Param('id') id: string, @Request() req: any, @Ip() ip: string) {
     return this.authService.revokeApiKey(id, req.user.id, ip);
+  }
+
+  @Get('verify-email')
+  @ApiOperation({ summary: 'Verify email address with token from email link' })
+  verifyEmail(@Query('token') token: string) {
+    return this.authService.verifyEmail(token);
+  }
+
+  @Post('resend-verification')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Resend email verification link' })
+  resendVerification(@Request() req: any) {
+    return this.authService.resendVerification(req.user.id || req.user.userId);
   }
 }

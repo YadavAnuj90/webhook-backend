@@ -31,7 +31,7 @@ export class PlaygroundController {
       return {
         success: res.status >= 200 && res.status < 300,
         status: res.status, statusText: res.statusText,
-        latency, headers: res.headers,
+        latency, headers: res.headers as Record<string, any>,
         body: typeof res.data === 'string' ? res.data.substring(0, 4096) : res.data,
         sentAt: new Date().toISOString(),
         curl: `curl -X ${method} "${dto.url}" \\\n  -H "Content-Type: application/json" \\\n${Object.entries(dto.headers || {}).map(([k, v]) => `  -H "${k}: ${v}" \\\n`).join('')}  -d '${JSON.stringify(dto.payload || {})}'`,

@@ -39,6 +39,46 @@ coverage/
 # ─── Docker ─────────────────────────────────────────────────────────────────
 # (docker-compose.yml and prometheus.yml are committed intentionally)
 
+# ─── Upload / storage artifacts ─────────────────────────────────────────────
+uploads/
+storage/
+s3-local/
+
+# ─── SSL / TLS certificates & keys ──────────────────────────────────────────
+*.pem
+*.key
+*.crt
+*.cert
+*.p12
+*.pfx
+
+# ─── Secrets & credentials (belt-and-suspenders) ────────────────────────────
+*.secret
+credentials.json
+service-account*.json
+gcp-*.json
+
+# ─── Sentry ──────────────────────────────────────────────────────────────────
+.sentryclirc
+sentry.properties
+
+# ─── Helm chart lock files & rendered manifests ──────────────────────────────
+helm/charts/
+helm/*.lock
+helm/rendered/
+
+# ─── CLI tunnel compiled output (tunnel.js is source — committed intentionally)
+cli/dist/
+cli/*.js.map
+
+# ─── Local config overrides ──────────────────────────────────────────────────
+*.local
+.npmrc
+.yarnrc
+
+# ─── Prometheus local data (if running locally) ───────────────────────────────
+prometheus/data/
+
 # ─── Misc ───────────────────────────────────────────────────────────────────
 .cache/
 tmp/

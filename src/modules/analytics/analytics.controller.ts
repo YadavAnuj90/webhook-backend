@@ -24,7 +24,25 @@ export class AnalyticsController {
 
   @Get('event-types')
   @ApiOperation({ summary: 'Event type breakdown' })
-  eventTypes(@Param('projectId') projectId: string, @Query('days') days = 7, @Query('endpointId') endpointId?: string) {
-    return this.analyticsService.getEventTypeBreakdown(projectId, endpointId, +days);
+  eventTypes(
+    @Param('projectId') projectId: string,
+    @Query('days') days = 7,
+    @Query('endpointId') endpointId?: string,
+  ) {
+    return this.analyticsService.getEventTypeBreakdown(
+      projectId,
+      endpointId,
+      +days,
+    );
+  }
+
+  // FEATURE 9: Delivery Heatmap API
+  @Get('heatmap')
+  @ApiOperation({
+    summary:
+      'Delivery heatmap — matrix of [dayOfWeek][hour] delivery counts',
+  })
+  getHeatmap(@Param('projectId') projectId: string) {
+    return this.analyticsService.getHeatmap(projectId);
   }
 }

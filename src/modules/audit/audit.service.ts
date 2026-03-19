@@ -33,7 +33,14 @@ export class AuditService {
     return { logs, total, page, limit };
   }
 
-  async getSystemHistory(filters: { action?: AuditAction; userId?: string; from?: Date; to?: Date; page?: number; limit?: number }) {
+  async getSystemHistory(filters: {
+    action?: AuditAction;
+    userId?: string;
+    from?: Date;
+    to?: Date;
+    page?: number;
+    limit?: number;
+  }) {
     const query: any = {};
     if (filters.action) query.action = filters.action;
     if (filters.userId) query.userId = filters.userId;
@@ -46,9 +53,33 @@ export class AuditService {
     const limit = filters.limit || 50;
     const skip = (page - 1) * limit;
     const [logs, total] = await Promise.all([
-      this.auditModel.find(query).sort({ createdAt: -1 }).skip(skip).limit(limit).lean(),
+      this.auditModel
+        .find(query)
+        .sort({ createdAt: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
       this.auditModel.countDocuments(query),
     ]);
     return { logs, total, page, limit };
+  }
+
+  // FEATURE 14: Audit Log CSV Export
+  async exportLogs(
+    userId: string,
+    from?: string,
+    to?: string,
+  ) {
+    const filter: any = { userId };
+    if (from || to) {
+      filter.createdAt = {};
+      if (from) filter.createdAt.$gte = new Date(from);
+      if (to) filter.createdAt.$lte = new Date(to);
+    }
+    return this.auditModel
+      .find(filter)
+      .sort({ createdAt: -1 })
+      .limit(10000)
+      .lean();
   }
 }

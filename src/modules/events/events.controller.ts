@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { EventsService } from './events.service';
@@ -45,5 +45,18 @@ export class EventsController {
   @ApiOperation({ summary: 'Replay single event' })
   replay(@Param('projectId') projectId: string, @Param('id') id: string) {
     return this.eventsService.replay(id, projectId);
+  }
+
+  // FEATURE 6: GDPR Right-to-Erasure
+  @Delete('erase')
+  @ApiOperation({
+    summary:
+      'GDPR: erase all events and logs containing a customerId',
+  })
+  async erase(
+    @Param('projectId') projectId: string,
+    @Query('customerId') customerId: string,
+  ) {
+    return this.eventsService.eraseByCustomerId(projectId, customerId);
   }
 }

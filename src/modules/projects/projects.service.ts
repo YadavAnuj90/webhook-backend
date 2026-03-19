@@ -49,7 +49,7 @@ export class ProjectsService {
 
   async update(id: string, userId: string, dto: UpdateProjectDto): Promise<Project> {
     const project = await this.findOne(id, userId);
-    return this.projectModel.findByIdAndUpdate(id, dto, { new: true });
+    return this.projectModel.findByIdAndUpdate(id, dto, { new: true }) as any;
   }
 
   async delete(id: string, userId: string): Promise<void> {

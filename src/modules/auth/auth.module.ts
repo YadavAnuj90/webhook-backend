@@ -11,6 +11,7 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { ApiKey, ApiKeySchema } from '../apikeys/schemas/apikey.schema';
 import { User, UserSchema } from '../users/schemas/user.schema';
 import { AuditModule } from '../audit/audit.module';
+import { BillingModule } from '../billing/billing.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { AuditModule } from '../audit/audit.module';
       { name: User.name, schema: UserSchema },
     ]),
     AuditModule,
+    BillingModule,
   ],
   controllers: [AuthController],
   providers: [AuthService, JwtStrategy],

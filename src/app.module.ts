@@ -6,6 +6,7 @@ import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
+
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
 import { AuditModule } from './modules/audit/audit.module';
@@ -27,6 +28,15 @@ import { PlaygroundModule } from './modules/playground/playground.module';
 import { TransformationsModule } from './modules/transformations/transformations.module';
 import { PortalModule } from './modules/portal/portal.module';
 import { UsageModule } from './modules/usage/usage.module';
+
+// ─── New Feature Modules ──────────────────────────────────────────────────────
+import { EventCatalogModule } from './modules/event-catalog/event-catalog.module';
+import { TunnelModule } from './modules/tunnel/tunnel.module';
+import { OperationalWebhooksModule } from './modules/operational-webhooks/operational-webhooks.module';
+import { DeduplicationModule } from './modules/deduplication/deduplication.module';
+import { SlaModule } from './modules/sla/sla.module';
+import { AiModule } from './modules/ai/ai.module';
+import { BillingModule } from './modules/billing/billing.module';
 
 @Module({
   imports: [
@@ -61,11 +71,26 @@ import { UsageModule } from './modules/usage/usage.module';
     }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 200 }]),
     ScheduleModule.forRoot(),
+
+    // Core modules
     AuthModule, UsersModule, AuditModule, SearchModule, PaymentsModule,
     EndpointsModule, EventsModule, DeliveryModule, ProjectsModule, WebhooksModule,
     AnalyticsModule, HealthModule, MetricsModule, NotificationsModule,
     WorkspacesModule, ApiKeysModule, AlertsModule, PlaygroundModule,
     TransformationsModule, PortalModule, UsageModule,
+
+    // New feature modules
+    EventCatalogModule,
+    TunnelModule,
+    OperationalWebhooksModule,
+    DeduplicationModule,
+    SlaModule,
+
+    // AI Features (Gemini)
+    AiModule,
+
+    // ─── Billing: Trial, Subscriptions, Credits, Reseller ────────────────────
+    BillingModule,
   ],
 })
 export class AppModule {}
