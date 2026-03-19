@@ -1,6 +1,7 @@
-import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards, Request, Ip, Headers } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Get, Delete, Body, Param, Query, UseGuards, Request, Ip, Headers, Res } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { Response } from 'express';
 import { AuthService } from './auth.service';
 
 @ApiTags('Auth')
@@ -114,5 +115,26 @@ export class AuthController {
   @ApiOperation({ summary: 'Resend email verification link' })
   resendVerification(@Request() req: any) {
     return this.authService.resendVerification(req.user.id || req.user.userId);
+  }
+
+  // ── Google OAuth ─────────────────────────────────────────────────────────
+
+  @Get('google')
+  @UseGuards(AuthGuard('google'))
+  @ApiOperation({ summary: 'Redirect to Google OAuth consent screen' })
+  googleLogin() {
+    // Passport redirects automatically — no body needed
+  }
+
+  @Get('google/callback')
+  @UseGuards(AuthGuard('google'))
+  @ApiExcludeEndpoint()   // internal — Google calls this, not the frontend
+  async googleCallback(@Request() req: any, @Ip() ip: string, @Res() res: Response) {
+    const { accessToken, refreshToken, isNew } = await this.authService.loginWithGoogle(req.user, ip);
+    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
+    // Redirect to frontend with tokens in query params (frontend reads once and stores in memory)
+    res.redirect(
+      `${frontendUrl}/auth/google/callback?accessToken=${accessToken}&refreshToken=${refreshToken}&isNew=${isNew}`,
+    );
   }
 }

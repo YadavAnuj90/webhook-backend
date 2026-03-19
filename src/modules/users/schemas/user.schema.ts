@@ -18,9 +18,12 @@ export enum UserStatus {
 @Schema({ timestamps: true })
 export class User extends Document {
   @Prop({ required: true, unique: true, lowercase: true }) email: string;
-  @Prop({ required: true }) passwordHash: string;
+  @Prop({ default: null }) passwordHash: string;   // null for Google-only accounts
   @Prop({ required: true }) firstName: string;
   @Prop({ required: true }) lastName: string;
+
+  // OAuth
+  @Prop({ default: null, sparse: true, index: true }) googleId: string;
   @Prop({ default: null }) avatarUrl: string;
   @Prop({ default: UserRole.DEVELOPER, enum: UserRole }) role: UserRole;
   @Prop({ default: UserStatus.ACTIVE, enum: UserStatus }) status: UserStatus;

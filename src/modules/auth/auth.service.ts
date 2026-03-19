@@ -69,6 +69,49 @@ export class AuthService {
     return { message: 'Verification email sent' };
   }
 
+  // ── Google OAuth ──────────────────────────────────────────────────────────
+  async loginWithGoogle(googleProfile: {
+    googleId: string; email: string; firstName: string; lastName: string; avatarUrl: string | null;
+  }, ip: string): Promise<{ accessToken: string; refreshToken: string; user: any; isNew: boolean }> {
+    let user = await this.userModel.findOne({
+      $or: [{ googleId: googleProfile.googleId }, { email: googleProfile.email.toLowerCase() }],
+    });
+
+    let isNew = false;
+    if (!user) {
+      // New user — create account, start trial, mark email verified (Google already verified it)
+      user = await this.userModel.create({
+        googleId:     googleProfile.googleId,
+        email:        googleProfile.email.toLowerCase(),
+        firstName:    googleProfile.firstName,
+        lastName:     googleProfile.lastName,
+        fullName:     `${googleProfile.firstName} ${googleProfile.lastName}`,
+        avatarUrl:    googleProfile.avatarUrl,
+        emailVerified: true,          // Google has already verified the email
+        passwordHash:  null,          // no password for Google-only accounts
+      });
+      await this.trialService.startTrial(user.id);
+      isNew = true;
+    } else if (!user.googleId) {
+      // Existing email/password user — link Google to their account
+      await this.userModel.findByIdAndUpdate(user.id, {
+        googleId:  googleProfile.googleId,
+        avatarUrl: googleProfile.avatarUrl || user.avatarUrl,
+        emailVerified: true,
+      });
+      user = (await this.userModel.findById(user.id))!;
+    }
+
+    if (user.status === 'suspended') throw new UnauthorizedException('Account suspended');
+
+    await this.userModel.findByIdAndUpdate(user.id, {
+      lastLoginAt: new Date(), lastLoginIp: ip, $inc: { loginCount: 1 },
+    });
+
+    const tokens = await this.issueTokens(user, ip, 'Google');
+    return { ...tokens, user: this.safeUser(user), isNew };
+  }
+
   async login(email: string, password: string, ip: string, device = 'Web') {
     const user = await this.userModel.findOne({ email: email.toLowerCase() });
     if (!user) throw new UnauthorizedException('Invalid credentials');

@@ -6,6 +6,7 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
+import { GoogleStrategy } from './strategies/google.strategy';
 // Use the canonical ApiKey schema from the apikeys module to prevent two registrations
 // of the same Mongoose model name with different field definitions.
 import { ApiKey, ApiKeySchema } from '../apikeys/schemas/apikey.schema';
@@ -32,7 +33,7 @@ import { BillingModule } from '../billing/billing.module';
     BillingModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy],
+  providers: [AuthService, JwtStrategy, GoogleStrategy],
   exports: [AuthService, JwtModule],
 })
 export class AuthModule {}
