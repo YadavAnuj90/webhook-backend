@@ -1,5 +1,8 @@
 import { Controller, Post, Body, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags, ApiBearerAuth, ApiOperation,
+  ApiResponse, ApiBody,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import * as crypto from 'crypto';
@@ -13,7 +16,22 @@ import axios from 'axios';
 export class PlaygroundController {
 
   @Post('fire')
-  @ApiOperation({ summary: 'Fire a test HTTP request to any URL and inspect the response' })
+  @ApiOperation({ summary: 'Fire a test HTTP request to any URL and inspect the full response' })
+  @ApiBody({
+    schema: {
+      required: ['url'],
+      properties: {
+        url: { type: 'string', example: 'https://webhook.site/your-uuid' },
+        method: { type: 'string', enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], default: 'POST' },
+        headers: { type: 'object', description: 'Custom headers to include', example: { 'X-Custom-Header': 'value' } },
+        payload: { type: 'object', description: 'JSON body to send' },
+        timeout: { type: 'number', description: 'Request timeout in ms (max 30000)', default: 10000 },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: 'Request executed — returns status, latency, response headers/body, and equivalent curl command' })
+  @ApiResponse({ status: 201, description: 'Request failed (network error) — returns { success: false, error }' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async fire(
     @Request() req: any,
     @Body() dto: { url: string; method?: string; headers?: Record<string, string>; payload?: any; timeout?: number },
@@ -42,7 +60,19 @@ export class PlaygroundController {
   }
 
   @Post('validate-signature')
-  @ApiOperation({ summary: 'Validate a HMAC-SHA256 webhook signature against a secret' })
+  @ApiOperation({ summary: 'Validate a HMAC-SHA256 webhook signature against a payload and secret' })
+  @ApiBody({
+    schema: {
+      required: ['payload', 'signature', 'secret'],
+      properties: {
+        payload: { type: 'string', description: 'Raw request body string (as received)' },
+        signature: { type: 'string', description: 'Signature to verify (with or without sha256= prefix)', example: 'sha256=abc123...' },
+        secret: { type: 'string', description: 'HMAC signing secret' },
+      },
+    },
+  })
+  @ApiResponse({ status: 201, description: '{ valid: boolean, expected: "sha256=..." }' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   validateSignature(@Body() dto: { payload: string; signature: string; secret: string }) {
     const expected = crypto.createHmac('sha256', dto.secret).update(dto.payload).digest('hex');
     const sigToCheck = dto.signature.replace(/^sha256=/, '');

@@ -2,7 +2,10 @@ import { Injectable } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Controller, Get, UseGuards, Request, Query } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags, ApiBearerAuth, ApiOperation,
+  ApiResponse, ApiQuery,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -124,11 +127,16 @@ export class UsageController {
   constructor(private svc: UsageService) {}
 
   @Get()
-  @ApiOperation({ summary: 'Get real-time usage stats for period (day | week | month)' })
+  @ApiOperation({ summary: 'Get real-time delivery stats and daily chart for a period (day | week | month)' })
+  @ApiQuery({ name: 'period', required: false, enum: ['day', 'week', 'month'], description: 'Look-back period (default: month)' })
+  @ApiResponse({ status: 200, description: 'Usage stats: chart, totals, plan limits, overage estimate, bandwidth' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   getUsage(@Request() req: any, @Query('period') period: any) { return this.svc.getUsage(req.user.id, period); }
 
   @Get('summary')
-  @ApiOperation({ summary: 'Get monthly summary, plan limits, and overage estimate' })
+  @ApiOperation({ summary: 'Get this month vs last month summary with plan limits and overage cost estimate' })
+  @ApiResponse({ status: 200, description: 'Monthly comparison: thisMonth, lastMonth, plan, limits, percentUsed, overage' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   getSummary(@Request() req: any) { return this.svc.getSummary(req.user.id); }
 }
 

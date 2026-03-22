@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common';
+import { APP_GUARD } from '@nestjs/core';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bull';
-import { ThrottlerModule } from '@nestjs/throttler';
+import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
@@ -41,19 +42,37 @@ import { BillingModule } from './modules/billing/billing.module';
 @Module({
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
-    WinstonModule.forRoot({
-      transports: [
-        new winston.transports.Console({
-          format: winston.format.combine(
-            winston.format.timestamp(),
-            winston.format.colorize(),
-            winston.format.printf(({ timestamp, level, message, context }) =>
-              `[${timestamp}] [${level}] [${context || 'App'}] ${message}`),
-          ),
-        }),
-        new winston.transports.File({ filename: 'logs/error.log', level: 'error' }),
-        new winston.transports.File({ filename: 'logs/combined.log' }),
-      ],
+    WinstonModule.forRootAsync({
+      useFactory: () => {
+        const isProd = process.env.NODE_ENV === 'production';
+        const consoleFormat = isProd
+          ? winston.format.combine(
+              winston.format.timestamp(),
+              winston.format.errors({ stack: true }),
+              winston.format.json(),                        // structured JSON in prod
+            )
+          : winston.format.combine(
+              winston.format.timestamp({ format: 'HH:mm:ss' }),
+              winston.format.colorize(),
+              winston.format.errors({ stack: true }),
+              winston.format.printf(({ timestamp, level, message, context, stack }) =>
+                `${timestamp} [${level}] [${context || 'App'}] ${message}${stack ? '\n' + stack : ''}`),
+            );
+        return {
+          transports: [
+            new winston.transports.Console({ format: consoleFormat }),
+            new winston.transports.File({
+              filename: 'logs/error.log',
+              level: 'error',
+              format: winston.format.combine(winston.format.timestamp(), winston.format.errors({ stack: true }), winston.format.json()),
+            }),
+            new winston.transports.File({
+              filename: 'logs/combined.log',
+              format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
+            }),
+          ],
+        };
+      },
     }),
     MongooseModule.forRootAsync({
       useFactory: (cfg: ConfigService) => ({ uri: cfg.get('MONGODB_URI') }),
@@ -69,7 +88,10 @@ import { BillingModule } from './modules/billing/billing.module';
       }),
       inject: [ConfigService],
     }),
-    ThrottlerModule.forRoot([{ ttl: 60000, limit: 200 }]),
+    ThrottlerModule.forRoot([
+      { name: 'global', ttl: 60_000, limit: 200 },          // 200 req/min global
+      { name: 'auth',   ttl: 60_000, limit: 20  },          // 20 req/min on auth routes (override per-route)
+    ]),
     ScheduleModule.forRoot(),
 
     // Core modules
@@ -91,6 +113,10 @@ import { BillingModule } from './modules/billing/billing.module';
 
     // ─── Billing: Trial, Subscriptions, Credits, Reseller ────────────────────
     BillingModule,
+  ],
+  providers: [
+    // ── Global rate-limit guard (applies to every route; skip with @SkipThrottle()) ──
+    { provide: APP_GUARD, useClass: ThrottlerGuard },
   ],
 })
 export class AppModule {}

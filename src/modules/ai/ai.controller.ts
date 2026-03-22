@@ -4,13 +4,13 @@ import {
 } from '@nestjs/common';
 import {
   ApiTags, ApiBearerAuth, ApiOperation,
-  ApiParam, ApiBody,
+  ApiParam, ApiBody, ApiResponse,
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AiService } from './ai.service';
 import { AiProviderService } from './gemini.service';
 
-@ApiTags('AI Features')
+@ApiTags('AI')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'))
 @Controller('ai')
@@ -23,7 +23,9 @@ export class AiController {
   // ── Provider status (frontend uses this to show active AI badge) ────────────
   @Get('status')
   @HttpCode(HttpStatus.OK)
-  @ApiOperation({ summary: '🤖 Get active AI provider status' })
+  @ApiOperation({ summary: '🤖 Get active AI provider status (Gemini / DeepSeek / none)' })
+  @ApiResponse({ status: 200, description: 'Provider info: { provider, label, configured, models }' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   getStatus() {
     return {
       provider: this.provider.provider,
@@ -52,7 +54,7 @@ Examples:
 - "Are there any patterns in my DLQ events from the last week?"
 Gemini analyzes your last 80 delivery logs and returns a root cause + action plan.`,
   })
-  @ApiParam({ name: 'projectId', description: 'Your project ID' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
   @ApiBody({
     schema: {
       type: 'object',
@@ -65,6 +67,9 @@ Gemini analyzes your last 80 delivery logs and returns a root cause + action pla
       },
     },
   })
+  @ApiResponse({ status: 200, description: 'AI analysis: rootCause, actionPlan, affectedEvents count' })
+  @ApiResponse({ status: 503, description: 'AI provider not configured' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   debugWebhooks(
     @Param('projectId') projectId: string,
     @Body() dto: { question: string; endpointId?: string; eventType?: string; hours?: number },
@@ -91,7 +96,7 @@ Gemini analyzes your last 80 delivery logs and returns a root cause + action pla
 - A description, version, and tags
 - Optionally auto-saves to your Event Catalog (set autoSave: true)`,
   })
-  @ApiParam({ name: 'projectId', description: 'Your project ID' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
   @ApiBody({
     schema: {
       type: 'object',
@@ -103,6 +108,9 @@ Gemini analyzes your last 80 delivery logs and returns a root cause + action pla
       },
     },
   })
+  @ApiResponse({ status: 200, description: 'Generated JSON Schema, suggested event type name, tags, and description' })
+  @ApiResponse({ status: 503, description: 'AI provider not configured' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   async generateSchema(
     @Param('projectId') projectId: string,
     @Body() dto: { samplePayload: Record<string, any>; eventTypeName?: string; autoSave?: boolean },
@@ -131,7 +139,10 @@ and for each group provides:
 
 Also returns: overall DLQ health summary, quick wins, and estimated recovery rate.`,
   })
-  @ApiParam({ name: 'projectId', description: 'Your project ID' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
+  @ApiResponse({ status: 200, description: 'Triage report: groups, fixes, priorities, and overall health summary' })
+  @ApiResponse({ status: 503, description: 'AI provider not configured' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   triageDlq(@Param('projectId') projectId: string) {
     return this.ai.triageDlq(projectId);
   }
@@ -163,6 +174,9 @@ Returns piiPaths: ready-to-paste array for your endpoint's PII Scrubbing config.
       },
     },
   })
+  @ApiResponse({ status: 200, description: 'Array of detected PII fields with type, confidence, and reason' })
+  @ApiResponse({ status: 503, description: 'AI provider not configured' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   detectPii(@Body() dto: { samplePayload: Record<string, any> }) {
     return this.ai.detectPii(dto.samplePayload);
   }
@@ -175,8 +189,8 @@ Returns piiPaths: ready-to-paste array for your endpoint's PII Scrubbing config.
 Set autoApply: true to automatically update the endpoint's piiFields config
 with all high and medium confidence detections.`,
   })
-  @ApiParam({ name: 'projectId', description: 'Your project ID' })
-  @ApiParam({ name: 'endpointId', description: 'Endpoint to optionally apply PII config to' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
+  @ApiParam({ name: 'endpointId', description: 'Endpoint to optionally apply PII config to', type: String })
   @ApiBody({
     schema: {
       type: 'object',
@@ -191,6 +205,10 @@ with all high and medium confidence detections.`,
       },
     },
   })
+  @ApiResponse({ status: 200, description: 'PII detection result; if autoApply=true, endpoint piiFields updated' })
+  @ApiResponse({ status: 404, description: 'Project or endpoint not found' })
+  @ApiResponse({ status: 503, description: 'AI provider not configured' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   detectPiiForEndpoint(
     @Param('projectId') projectId: string,
     @Param('endpointId') endpointId: string,

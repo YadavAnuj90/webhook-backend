@@ -1,6 +1,7 @@
-import { Controller, Post, Body, UseGuards, Request, Ip, Headers } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import { Controller, Post, Body, UseGuards, Request, Ip, Headers, HttpCode } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse, ApiBody, ApiHeader } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
+import { SkipThrottle } from '@nestjs/throttler';
 import { PaymentsService } from './payments.service';
 
 /**
@@ -17,7 +18,10 @@ export class PaymentsController {
   @Post('order')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
-  @ApiOperation({ summary: '[Legacy] Create Razorpay order for plan upgrade' })
+  @ApiOperation({ summary: '[Legacy] Create Razorpay order for plan upgrade', deprecated: true })
+  @ApiBody({ schema: { properties: { planId: { type: 'string', example: 'pro' } }, required: ['planId'] } })
+  @ApiResponse({ status: 201, description: 'Razorpay order created' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   createOrder(@Request() req: any, @Body() body: { planId: string }, @Ip() ip: string) {
     return this.paymentsService.createOrder(req.user.id, body.planId, ip);
   }
@@ -26,7 +30,11 @@ export class PaymentsController {
   @Post('verify')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
-  @ApiOperation({ summary: '[Legacy] Verify Razorpay payment' })
+  @ApiOperation({ summary: '[Legacy] Verify Razorpay payment', deprecated: true })
+  @ApiBody({ schema: { properties: { orderId: { type: 'string' }, paymentId: { type: 'string' }, signature: { type: 'string' }, planId: { type: 'string' } }, required: ['orderId', 'paymentId', 'signature', 'planId'] } })
+  @ApiResponse({ status: 200, description: 'Payment verified and plan activated' })
+  @ApiResponse({ status: 400, description: 'Invalid signature' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   verifyPayment(
     @Request() req: any,
     @Body() body: { orderId: string; paymentId: string; signature: string; planId: string },
@@ -36,11 +44,16 @@ export class PaymentsController {
   }
 
   /**
-   * Razorpay server-side webhook — NO authentication (verified by HMAC signature).
+   * Razorpay server-side webhook — NO authentication (HMAC-SHA256 verified via x-razorpay-signature).
    * Configure in Razorpay Dashboard → Settings → Webhooks → https://yourdomain.com/api/v1/billing/webhook
    */
   @Post('webhook')
-  @ApiOperation({ summary: 'Razorpay webhook receiver (HMAC-verified, no JWT)' })
+  @SkipThrottle()
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Razorpay webhook receiver — HMAC-verified, no JWT auth required' })
+  @ApiHeader({ name: 'x-razorpay-signature', description: 'HMAC-SHA256 of raw body using your Razorpay webhook secret', required: true })
+  @ApiResponse({ status: 200, description: 'Webhook processed' })
+  @ApiResponse({ status: 400, description: 'Invalid or missing HMAC signature' })
   webhook(
     @Body() body: any,
     @Headers('x-razorpay-signature') signature: string,

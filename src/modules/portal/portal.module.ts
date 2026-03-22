@@ -3,7 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { PortalToken, PortalTokenDocument, PortalTokenSchema } from './schemas/portal.schema';
 import { Controller, Get, Post, Delete, Patch, Body, Param, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags, ApiBearerAuth, ApiOperation,
+  ApiResponse, ApiParam, ApiBody,
+} from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -119,26 +122,40 @@ export class PortalController {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Post('tokens')
-  @ApiOperation({ summary: 'Create a portal token (with full branding config)' })
+  @ApiOperation({ summary: 'Create a portal token with full branding configuration' })
+  @ApiBody({ schema: { required: ['projectId', 'customerName'], properties: { projectId: { type: 'string' }, customerName: { type: 'string', example: 'Acme Corp' }, customerEmail: { type: 'string', format: 'email' }, expiresAt: { type: 'string', format: 'date-time' }, companyName: { type: 'string' }, logoUrl: { type: 'string', format: 'uri' }, faviconUrl: { type: 'string', format: 'uri' }, primaryColor: { type: 'string', example: '#6366f1' }, secondaryColor: { type: 'string' }, fontFamily: { type: 'string', example: 'Inter, sans-serif' }, darkMode: { type: 'boolean', default: false }, customDomain: { type: 'string', description: 'CNAME domain for white-labelling' }, supportEmail: { type: 'string', format: 'email' }, portalTitle: { type: 'string', example: 'Webhook Dashboard' }, customCss: { type: 'string' }, socialLinks: { type: 'object' } } } })
+  @ApiResponse({ status: 201, description: 'Portal token created — share the token with your customer' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   createToken(@Request() req: any, @Body() dto: any) { return this.svc.createToken(req.user.id, dto); }
 
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Get('tokens')
-  @ApiOperation({ summary: 'List portal tokens' })
+  @ApiOperation({ summary: 'List all portal tokens created by the current user' })
+  @ApiResponse({ status: 200, description: 'Array of portal tokens with branding config and usage stats' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   listTokens(@Request() req: any) { return this.svc.listTokens(req.user.id); }
 
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Patch('tokens/:id/branding')
-  @ApiOperation({ summary: 'Update branding (logo, colors, font, domain, CSS) for a portal token' })
+  @ApiOperation({ summary: 'Update branding settings (logo, colors, font, domain, CSS) for a portal token' })
+  @ApiParam({ name: 'id', description: 'Portal token ID', type: String })
+  @ApiResponse({ status: 200, description: 'Updated portal token' })
+  @ApiResponse({ status: 404, description: 'Token not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   updateBranding(@Param('id') id: string, @Request() req: any, @Body() dto: any) { return this.svc.updateBranding(req.user.id, id, dto); }
 
-  // FEATURE 11: Customer Self-Service Event Subscriptions
+  // Customer Self-Service Event Subscriptions
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Patch('tokens/:id/subscriptions')
-  @ApiOperation({ summary: 'Update subscribed event types for a portal token' })
+  @ApiOperation({ summary: 'Update which event types a customer can subscribe to through the portal' })
+  @ApiParam({ name: 'id', description: 'Portal token ID', type: String })
+  @ApiBody({ schema: { required: ['subscribedEventTypes'], properties: { subscribedEventTypes: { type: 'array', items: { type: 'string' }, example: ['payment.success', 'order.shipped'] } } } })
+  @ApiResponse({ status: 200, description: 'Subscribed event types updated' })
+  @ApiResponse({ status: 404, description: 'Token not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   updateSubscriptions(
     @Param('id') id: string,
     @Request() req: any,
@@ -152,22 +169,38 @@ export class PortalController {
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Patch('tokens/:id/revoke')
-  @ApiOperation({ summary: 'Revoke a portal token' })
+  @ApiOperation({ summary: 'Revoke a portal token (customer loses access immediately)' })
+  @ApiParam({ name: 'id', description: 'Portal token ID', type: String })
+  @ApiResponse({ status: 200, description: 'Token revoked — isActive set to false' })
+  @ApiResponse({ status: 404, description: 'Token not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   revokeToken(@Param('id') id: string, @Request() req: any) { return this.svc.revokeToken(req.user.id, id); }
 
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Delete('tokens/:id')
-  @ApiOperation({ summary: 'Delete a portal token' })
+  @ApiOperation({ summary: 'Delete a portal token permanently' })
+  @ApiParam({ name: 'id', description: 'Portal token ID', type: String })
+  @ApiResponse({ status: 200, description: '{ success: true }' })
+  @ApiResponse({ status: 404, description: 'Token not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   deleteToken(@Param('id') id: string, @Request() req: any) { return this.svc.deleteToken(req.user.id, id); }
 
   // ─── Public endpoints ──────────────────────────────────────────────────────
   @Get('access/:token')
-  @ApiOperation({ summary: 'Public: get portal branding data by token' })
+  @ApiOperation({ summary: 'Public: get portal branding and configuration by token (no auth required)' })
+  @ApiParam({ name: 'token', description: 'Portal access token (starts with pt_)', type: String })
+  @ApiResponse({ status: 200, description: 'Portal branding config, projectId, and customer info' })
+  @ApiResponse({ status: 404, description: 'Token invalid or revoked' })
+  @ApiResponse({ status: 403, description: 'Token expired' })
   getPortalData(@Param('token') token: string) { return this.svc.getPortalData(token); }
 
   @Get('domain/:domain')
-  @ApiOperation({ summary: 'Public: get portal branding data by custom domain (for CNAME white-labelling)' })
+  @ApiOperation({ summary: 'Public: get portal configuration by custom domain (for CNAME white-labelling)' })
+  @ApiParam({ name: 'domain', description: 'Custom domain configured in portal token (e.g. webhooks.yourbrand.com)', type: String })
+  @ApiResponse({ status: 200, description: 'Portal branding config for the given domain' })
+  @ApiResponse({ status: 404, description: 'No portal configured for this domain' })
+  @ApiResponse({ status: 403, description: 'Token expired' })
   getPortalByDomain(@Param('domain') domain: string) { return this.svc.getPortalDataByDomain(domain); }
 }
 

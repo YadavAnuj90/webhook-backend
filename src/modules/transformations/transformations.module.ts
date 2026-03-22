@@ -3,7 +3,10 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
 import { Transformation, TransformationDocument, TransformationSchema } from './schemas/transformation.schema';
 import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
-import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
+import {
+  ApiTags, ApiBearerAuth, ApiOperation,
+  ApiResponse, ApiParam, ApiBody,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
@@ -81,23 +84,42 @@ export class TransformationsController {
   constructor(private svc: TransformationsService) {}
 
   @Post()
-  @ApiOperation({ summary: 'Create a payload transformation rule' })
+  @ApiOperation({ summary: 'Create a payload transformation rule (remove fields, rename keys, add fields, filter, template)' })
+  @ApiBody({ schema: { required: ['type', 'name'], properties: { name: { type: 'string', example: 'Remove PII' }, type: { type: 'string', enum: ['remove_fields', 'rename_keys', 'add_fields', 'filter', 'custom_js'] }, endpointId: { type: 'string', description: 'Scope to specific endpoint (optional)' }, isActive: { type: 'boolean', default: true }, order: { type: 'number', description: 'Execution order (ascending)' }, config: { type: 'object', description: 'Type-specific config: { fields } for remove_fields, { mappings } for rename_keys, etc.' } } } })
+  @ApiResponse({ status: 201, description: 'Transformation rule created' })
+  @ApiResponse({ status: 400, description: 'Validation error' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   create(@Request() req: any, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
 
   @Get()
-  @ApiOperation({ summary: 'List transformation rules' })
+  @ApiOperation({ summary: 'List all transformation rules for the current user' })
+  @ApiResponse({ status: 200, description: 'Array of transformation rules ordered by execution order' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   list(@Request() req: any) { return this.svc.list(req.user.id); }
 
   @Put(':id')
   @ApiOperation({ summary: 'Update a transformation rule' })
+  @ApiParam({ name: 'id', description: 'Transformation rule ID', type: String })
+  @ApiResponse({ status: 200, description: 'Updated transformation rule' })
+  @ApiResponse({ status: 404, description: 'Rule not found' })
+  @ApiResponse({ status: 403, description: 'Access denied — not your rule' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   update(@Param('id') id: string, @Request() req: any, @Body() dto: any) { return this.svc.update(req.user.id, id, dto); }
 
   @Delete(':id')
-  @ApiOperation({ summary: 'Delete a transformation rule' })
+  @ApiOperation({ summary: 'Delete a transformation rule permanently' })
+  @ApiParam({ name: 'id', description: 'Transformation rule ID', type: String })
+  @ApiResponse({ status: 200, description: '{ success: true }' })
+  @ApiResponse({ status: 404, description: 'Rule not found' })
+  @ApiResponse({ status: 403, description: 'Access denied — not your rule' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   delete(@Param('id') id: string, @Request() req: any) { return this.svc.delete(req.user.id, id); }
 
   @Post('preview')
-  @ApiOperation({ summary: 'Preview transformation result on a sample payload' })
+  @ApiOperation({ summary: 'Preview transformation result on a sample payload without saving' })
+  @ApiBody({ schema: { required: ['transformation', 'payload'], properties: { transformation: { type: 'object', description: 'Transformation rule object (same shape as create body)' }, payload: { type: 'object', description: 'Sample payload to transform' } } } })
+  @ApiResponse({ status: 201, description: '{ input, output, dropped } — dropped=true means payload would be filtered out' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
   preview(@Request() req: any, @Body() dto: any) { return this.svc.preview(req.user.id, dto); }
 }
 
