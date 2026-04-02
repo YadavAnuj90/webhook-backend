@@ -6,6 +6,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { EndpointsService } from './endpoints.service';
 import { EndpointStatus } from './schemas/endpoint.schema';
+import { CreateEndpointDto, UpdateEndpointDto } from './dto/create-endpoint.dto';
 
 @ApiTags('Endpoints')
 @ApiBearerAuth('JWT')
@@ -22,7 +23,7 @@ export class EndpointsController {
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Project not found' })
-  create(@Param('projectId') projectId: string, @Body() dto: any, @Request() req: any) {
+  create(@Param('projectId') projectId: string, @Body() dto: CreateEndpointDto, @Request() req: any) {
     return this.endpointsService.create(projectId, dto, req.user?.userId || req.user?.id);
   }
 
@@ -56,7 +57,7 @@ export class EndpointsController {
   @ApiResponse({ status: 200, description: 'Updated endpoint' })
   @ApiResponse({ status: 404, description: 'Endpoint not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  update(@Param('projectId') projectId: string, @Param('id') id: string, @Body() dto: any) {
+  update(@Param('projectId') projectId: string, @Param('id') id: string, @Body() dto: UpdateEndpointDto) {
     return this.endpointsService.update(id, projectId, dto);
   }
 

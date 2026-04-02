@@ -11,6 +11,7 @@ import { AuthGuard } from '@nestjs/passport';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
 import * as crypto from 'crypto';
+import { CreatePortalTokenDto, UpdateSubscriptionsDto } from './dto/portal.dto';
 
 @Injectable()
 export class PortalService {
@@ -126,7 +127,7 @@ export class PortalController {
   @ApiBody({ schema: { required: ['projectId', 'customerName'], properties: { projectId: { type: 'string' }, customerName: { type: 'string', example: 'Acme Corp' }, customerEmail: { type: 'string', format: 'email' }, expiresAt: { type: 'string', format: 'date-time' }, companyName: { type: 'string' }, logoUrl: { type: 'string', format: 'uri' }, faviconUrl: { type: 'string', format: 'uri' }, primaryColor: { type: 'string', example: '#6366f1' }, secondaryColor: { type: 'string' }, fontFamily: { type: 'string', example: 'Inter, sans-serif' }, darkMode: { type: 'boolean', default: false }, customDomain: { type: 'string', description: 'CNAME domain for white-labelling' }, supportEmail: { type: 'string', format: 'email' }, portalTitle: { type: 'string', example: 'Webhook Dashboard' }, customCss: { type: 'string' }, socialLinks: { type: 'object' } } } })
   @ApiResponse({ status: 201, description: 'Portal token created — share the token with your customer' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  createToken(@Request() req: any, @Body() dto: any) { return this.svc.createToken(req.user.id, dto); }
+  createToken(@Request() req: any, @Body() dto: CreatePortalTokenDto) { return this.svc.createToken(req.user.id, dto); }
 
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
@@ -144,7 +145,7 @@ export class PortalController {
   @ApiResponse({ status: 200, description: 'Updated portal token' })
   @ApiResponse({ status: 404, description: 'Token not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  updateBranding(@Param('id') id: string, @Request() req: any, @Body() dto: any) { return this.svc.updateBranding(req.user.id, id, dto); }
+  updateBranding(@Param('id') id: string, @Request() req: any, @Body() dto: CreatePortalTokenDto) { return this.svc.updateBranding(req.user.id, id, dto); }
 
   // Customer Self-Service Event Subscriptions
   @UseGuards(AuthGuard('jwt'))
@@ -159,7 +160,7 @@ export class PortalController {
   updateSubscriptions(
     @Param('id') id: string,
     @Request() req: any,
-    @Body() dto: { subscribedEventTypes: string[] },
+    @Body() dto: UpdateSubscriptionsDto,
   ) {
     return this.svc.updateBranding(req.user.id, id, {
       subscribedEventTypes: dto.subscribedEventTypes,

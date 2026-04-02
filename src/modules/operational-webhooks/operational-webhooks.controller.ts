@@ -5,6 +5,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { OperationalWebhooksService } from './operational-webhooks.service';
+import { CreateOperationalWebhookDto, UpdateOperationalWebhookDto } from './dto/operational-webhook.dto';
 
 @ApiTags('Operational Webhooks')
 @ApiBearerAuth('JWT')
@@ -20,7 +21,7 @@ export class OperationalWebhooksController {
   @ApiResponse({ status: 201, description: 'Operational webhook registered — returns id and signing secret' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  create(@Param('projectId') p: string, @Body() dto: any) { return this.svc.create(p, dto); }
+  create(@Param('projectId') p: string, @Body() dto: CreateOperationalWebhookDto) { return this.svc.create(p, dto); }
 
   @Get()
   @ApiOperation({ summary: 'List all operational/system webhooks for a project' })
@@ -36,7 +37,7 @@ export class OperationalWebhooksController {
   @ApiResponse({ status: 200, description: 'Updated operational webhook' })
   @ApiResponse({ status: 404, description: 'Webhook not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  update(@Param('projectId') p: string, @Param('id') id: string, @Body() dto: any) { return this.svc.update(p, id, dto); }
+  update(@Param('projectId') p: string, @Param('id') id: string, @Body() dto: UpdateOperationalWebhookDto) { return this.svc.update(p, id, dto); }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete an operational webhook permanently' })

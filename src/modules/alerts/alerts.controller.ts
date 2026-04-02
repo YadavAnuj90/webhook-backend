@@ -5,6 +5,7 @@ import {
 } from '@nestjs/swagger';
 import { AlertsService } from './alerts.service';
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
+import { CreateAlertDto, UpdateAlertDto } from './dto/alert.dto';
 
 @ApiTags('Alerts')
 @ApiBearerAuth('JWT')
@@ -19,7 +20,7 @@ export class AlertsController {
   @ApiResponse({ status: 201, description: 'Alert rule created' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  create(@Request() req: any, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
+  create(@Request() req: any, @Body() dto: CreateAlertDto) { return this.svc.create(req.user.id, dto); }
 
   @Get()
   @ApiOperation({ summary: 'List all alert rules for the current user' })
@@ -33,7 +34,7 @@ export class AlertsController {
   @ApiResponse({ status: 200, description: 'Updated alert rule' })
   @ApiResponse({ status: 404, description: 'Alert rule not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  update(@Param('id') id: string, @Request() req: any, @Body() dto: any) { return this.svc.update(req.user.id, id, dto); }
+  update(@Param('id') id: string, @Request() req: any, @Body() dto: UpdateAlertDto) { return this.svc.update(req.user.id, id, dto); }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete an alert rule permanently' })

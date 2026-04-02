@@ -6,6 +6,7 @@ import {
 import { WorkspacesService } from './workspaces.service';
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
 import { MemberRole } from './schemas/workspace.schema';
+import { CreateWorkspaceDto, InviteMemberDto, UpdateMemberRoleDto } from './dto/workspace.dto';
 
 @ApiTags('Workspaces')
 @ApiBearerAuth('JWT')
@@ -19,7 +20,7 @@ export class WorkspacesController {
   @ApiBody({ schema: { required: ['name'], properties: { name: { type: 'string', example: 'Engineering Team' }, description: { type: 'string' } } } })
   @ApiResponse({ status: 201, description: 'Workspace created' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  create(@Request() req: any, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
+  create(@Request() req: any, @Body() dto: CreateWorkspaceDto) { return this.svc.create(req.user.id, dto); }
 
   @Get()
   @ApiOperation({ summary: 'List all workspaces you belong to (owned and invited)' })
@@ -43,7 +44,7 @@ export class WorkspacesController {
   @ApiResponse({ status: 403, description: 'Owner only' })
   @ApiResponse({ status: 404, description: 'Workspace not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  update(@Param('id') id: string, @Request() req: any, @Body() dto: any) { return this.svc.update(id, req.user.id, dto); }
+  update(@Param('id') id: string, @Request() req: any, @Body() dto: CreateWorkspaceDto) { return this.svc.update(id, req.user.id, dto); }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a workspace and remove all members (owner only)' })
@@ -62,7 +63,7 @@ export class WorkspacesController {
   @ApiResponse({ status: 404, description: 'Workspace not found' })
   @ApiResponse({ status: 403, description: 'Owner/admin only' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  invite(@Param('id') id: string, @Request() req: any, @Body() dto: { email: string; role: MemberRole }) { return this.svc.invite(id, req.user.id, dto); }
+  invite(@Param('id') id: string, @Request() req: any, @Body() dto: InviteMemberDto) { return this.svc.invite(id, req.user.id, dto); }
 
   @Post('invite/:token/accept')
   @ApiOperation({ summary: 'Accept a workspace invite using the token from the invitation email' })
@@ -99,5 +100,5 @@ export class WorkspacesController {
   @ApiResponse({ status: 403, description: 'Owner only' })
   @ApiResponse({ status: 404, description: 'Member not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  updateRole(@Param('id') id: string, @Param('uid') uid: string, @Request() req: any, @Body() dto: { role: MemberRole }) { return this.svc.updateMemberRole(id, req.user.id, uid, dto.role); }
+  updateRole(@Param('id') id: string, @Param('uid') uid: string, @Request() req: any, @Body() dto: UpdateMemberRoleDto) { return this.svc.updateMemberRole(id, req.user.id, uid, dto.role); }
 }

@@ -10,6 +10,7 @@ import {
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import { MongooseModule } from '@nestjs/mongoose';
+import { CreateTransformationDto, UpdateTransformationDto, PreviewTransformationDto } from './dto/transformation.dto';
 
 @Injectable()
 export class TransformationsService {
@@ -89,7 +90,7 @@ export class TransformationsController {
   @ApiResponse({ status: 201, description: 'Transformation rule created' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  create(@Request() req: any, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
+  create(@Request() req: any, @Body() dto: CreateTransformationDto) { return this.svc.create(req.user.id, dto); }
 
   @Get()
   @ApiOperation({ summary: 'List all transformation rules for the current user' })
@@ -104,7 +105,7 @@ export class TransformationsController {
   @ApiResponse({ status: 404, description: 'Rule not found' })
   @ApiResponse({ status: 403, description: 'Access denied — not your rule' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  update(@Param('id') id: string, @Request() req: any, @Body() dto: any) { return this.svc.update(req.user.id, id, dto); }
+  update(@Param('id') id: string, @Request() req: any, @Body() dto: UpdateTransformationDto) { return this.svc.update(req.user.id, id, dto); }
 
   @Delete(':id')
   @ApiOperation({ summary: 'Delete a transformation rule permanently' })
@@ -120,7 +121,7 @@ export class TransformationsController {
   @ApiBody({ schema: { required: ['transformation', 'payload'], properties: { transformation: { type: 'object', description: 'Transformation rule object (same shape as create body)' }, payload: { type: 'object', description: 'Sample payload to transform' } } } })
   @ApiResponse({ status: 201, description: '{ input, output, dropped } — dropped=true means payload would be filtered out' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  preview(@Request() req: any, @Body() dto: any) { return this.svc.preview(req.user.id, dto); }
+  preview(@Request() req: any, @Body() dto: PreviewTransformationDto) { return this.svc.preview(req.user.id, dto); }
 }
 
 @Module({

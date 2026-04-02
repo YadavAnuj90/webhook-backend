@@ -90,7 +90,7 @@ import { BillingModule } from './modules/billing/billing.module';
     }),
     ThrottlerModule.forRoot([
       { name: 'global', ttl: 60_000, limit: 200 },          // 200 req/min global
-      { name: 'auth',   ttl: 60_000, limit: 20  },          // 20 req/min on auth routes (override per-route)
+      { name: 'auth',   ttl: 60_000, limit: 5   },          // 5 req/min on auth routes (login/register/forgot-password)
     ]),
     ScheduleModule.forRoot(),
 

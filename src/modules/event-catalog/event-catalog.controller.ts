@@ -18,6 +18,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
 import { EventCatalogService } from './event-catalog.service';
+import { CreateEventTypeDto, ValidatePayloadDto, ContractTestDto, SimulateEventDto } from './dto/event-catalog.dto';
 
 @ApiTags('Event Catalog')
 @ApiBearerAuth('JWT')
@@ -33,7 +34,7 @@ export class EventCatalogController {
   @ApiResponse({ status: 201, description: 'Event type registered in catalog' })
   @ApiResponse({ status: 400, description: 'Validation error or duplicate event type name' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  create(@Param('projectId') projectId: string, @Body() dto: any) {
+  create(@Param('projectId') projectId: string, @Body() dto: CreateEventTypeDto) {
     return this.svc.create(projectId, dto);
   }
 
@@ -65,7 +66,7 @@ export class EventCatalogController {
   @ApiResponse({ status: 200, description: 'Updated event type' })
   @ApiResponse({ status: 404, description: 'Event type not found' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  update(@Param('projectId') projectId: string, @Param('id') id: string, @Body() dto: any) {
+  update(@Param('projectId') projectId: string, @Param('id') id: string, @Body() dto: CreateEventTypeDto) {
     return this.svc.update(projectId, id, dto);
   }
 
@@ -89,7 +90,7 @@ export class EventCatalogController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   validate(
     @Param('projectId') projectId: string,
-    @Body() dto: { eventType: string; payload: Record<string, any> },
+    @Body() dto: ValidatePayloadDto,
   ) {
     return this.svc.validatePayload(projectId, dto.eventType, dto.payload);
   }
@@ -107,13 +108,13 @@ export class EventCatalogController {
   async contractTest(
     @Param('projectId') projectId: string,
     @Param('name') name: string,
-    @Body() body: { payload: Record<string, any>; version?: string },
+    @Body() dto: ContractTestDto,
     @Res() res: Response,
   ) {
     const result = await this.svc.validatePayload(
       projectId,
       name,
-      body.payload,
+      dto.payload,
     );
     return res.status(result.valid ? 200 : 422).json(result);
   }
@@ -130,7 +131,7 @@ export class EventCatalogController {
   simulate(
     @Param('projectId') projectId: string,
     @Param('id') id: string,
-    @Body() dto: { overrides?: Record<string, any>; endpointId?: string },
+    @Body() dto: SimulateEventDto,
   ) {
     return this.svc.simulate(projectId, id, dto.overrides);
   }

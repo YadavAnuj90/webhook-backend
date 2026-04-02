@@ -5,6 +5,7 @@ import {
 } from '@nestjs/swagger';
 import { ApiKeysService } from './apikeys.service';
 import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
+import { CreateApiKeyDto } from './dto/apikey.dto';
 
 @ApiTags('API Keys')
 @ApiBearerAuth('JWT')
@@ -19,7 +20,7 @@ export class ApiKeysController {
   @ApiResponse({ status: 201, description: 'API key created — plaintext key shown once only' })
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  create(@Request() req: any, @Body() dto: any) { return this.svc.create(req.user.id, dto); }
+  create(@Request() req: any, @Body() dto: CreateApiKeyDto) { return this.svc.create(req.user.id, dto); }
 
   @Get()
   @ApiOperation({ summary: 'List all API keys for the current user (plaintext value is masked)' })

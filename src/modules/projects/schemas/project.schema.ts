@@ -34,7 +34,14 @@ export class Project extends Document {
 
   @Prop({ default: null })
   usageResetAt: Date;
+
+  // Soft delete — queries MUST filter { deletedAt: null }
+  @Prop({ type: Date, default: null })
+  deletedAt: Date | null;
 }
 
 export const ProjectSchema = SchemaFactory.createForClass(Project);
 ProjectSchema.index({ ownerId: 1 });
+ProjectSchema.index({ ownerId: 1, isActive: 1 });                     // fast owner active-project queries
+ProjectSchema.index({ ownerId: 1, deletedAt: 1 });                    // soft-delete filter
+ProjectSchema.index({ 'members.userId': 1 });                         // member lookups

@@ -5,10 +5,18 @@ import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { GlobalExceptionFilter } from './common/filters/global-exception.filter';
 import { LoggingInterceptor } from './common/interceptors/logging.interceptor';
 import { SubscriptionGuard } from './common/guards/subscription.guard';
+import { EmailVerifiedGuard } from './common/guards/email-verified.guard';
 import { TrialService } from './modules/billing/trial.service';
 import { CreditsService } from './modules/billing/credits.service';
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
+import * as express from 'express';
+import { setupBullBoard } from './common/bull-board/bull-board.setup';
+
+// ── Compression (npm install compression @types/compression) ─────────────────
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+let compression: any = null;
+try { compression = require('compression'); } catch (_) { /* not installed — run: npm install compression */ }
 
 // ── Sentry (optional — enable with: npm install @sentry/node) ─────────────
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -57,14 +65,32 @@ async function bootstrap() {
   }));
   app.enableCors({ origin: process.env.FRONTEND_URL || 'http://localhost:3001', credentials: true });
   app.setGlobalPrefix('api/v1');
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidNonWhitelisted: false }));
+
+  // ── Body size limit: 1 MB max (raw body still available for webhook HMAC) ──
+  app.use(express.json({ limit: '1mb' }));
+  app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // ── Response compression ──────────────────────────────────────────────────
+  if (compression) app.use(compression());
+
+  app.useGlobalPipes(new ValidationPipe({
+    whitelist: true,
+    transform: true,
+    forbidNonWhitelisted: true,       // ← reject unknown fields (was false)
+    transformOptions: { enableImplicitConversion: true },
+  }));
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // ── Global subscription enforcement (trial expiry / payment required) ──────
+  // ── Global guards (order matters: EmailVerified → Subscription) ─────────
   const reflector   = app.get(Reflector);
   const trialSvc    = app.get(TrialService);
+  // EmailVerifiedGuard runs first — blocks unverified users from all protected routes
+  app.useGlobalGuards(new EmailVerifiedGuard(reflector));
   app.useGlobalGuards(new SubscriptionGuard(trialSvc, reflector));
+
+  // ── Bull Board queue monitoring dashboard ─────────────────────────────────
+  await setupBullBoard(app);
 
   // ── Seed default credit packages if not present ───────────────────────────
   try {
@@ -123,9 +149,21 @@ async function bootstrap() {
     },
   });
 
+  // ── Graceful shutdown ─────────────────────────────────────────────────────
+  app.enableShutdownHooks();
+
   const port = process.env.PORT || 3000;
   await app.listen(port);
   logger.log(`🚀 WebhookOS running on http://localhost:${port}`);
   logger.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
+
+  // ── SIGTERM / SIGINT graceful close ───────────────────────────────────────
+  const shutdown = async (signal: string) => {
+    logger.log(`Received ${signal} — closing server gracefully…`, 'Bootstrap');
+    await app.close();
+    process.exit(0);
+  };
+  process.on('SIGTERM', () => shutdown('SIGTERM'));
+  process.on('SIGINT',  () => shutdown('SIGINT'));
 }
 bootstrap();

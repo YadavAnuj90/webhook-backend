@@ -7,6 +7,7 @@ import { JwtAuthGuard } from '../auth/strategies/jwt.strategy';
 import { Module } from '@nestjs/common';
 import * as crypto from 'crypto';
 import axios from 'axios';
+import { PlaygroundFireDto, ValidateSignatureDto } from './dto/playground.dto';
 
 // Inline lightweight playground — fires a test delivery and returns full response details
 @ApiTags('Playground')
@@ -34,7 +35,7 @@ export class PlaygroundController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   async fire(
     @Request() req: any,
-    @Body() dto: { url: string; method?: string; headers?: Record<string, string>; payload?: any; timeout?: number },
+    @Body() dto: PlaygroundFireDto,
   ) {
     const start = Date.now();
     const method = (dto.method || 'POST').toUpperCase();
@@ -73,7 +74,7 @@ export class PlaygroundController {
   })
   @ApiResponse({ status: 201, description: '{ valid: boolean, expected: "sha256=..." }' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  validateSignature(@Body() dto: { payload: string; signature: string; secret: string }) {
+  validateSignature(@Body() dto: ValidateSignatureDto) {
     const expected = crypto.createHmac('sha256', dto.secret).update(dto.payload).digest('hex');
     const sigToCheck = dto.signature.replace(/^sha256=/, '');
     let valid = false;

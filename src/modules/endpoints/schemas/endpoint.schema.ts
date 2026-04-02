@@ -144,7 +144,14 @@ export class Endpoint extends Document {
   // FEATURE 18: Webhook Pause Scheduling (Maintenance Windows)
   @Prop({ type: [{ dayOfWeek: Number, startHour: Number, endHour: Number }], default: [] })
   maintenanceWindows: { dayOfWeek: number; startHour: number; endHour: number }[];
+
+  // Soft delete — queries MUST filter { deletedAt: null }
+  @Prop({ type: Date, default: null })
+  deletedAt: Date | null;
 }
 
 export const EndpointSchema = SchemaFactory.createForClass(Endpoint);
 EndpointSchema.index({ projectId: 1, status: 1 });
+EndpointSchema.index({ projectId: 1, createdAt: -1 });                // list endpoints by project, newest first
+EndpointSchema.index({ projectId: 1, deletedAt: 1 });                 // soft-delete filter
+EndpointSchema.index({ projectId: 1, eventTypes: 1 });                // filter endpoints by event type

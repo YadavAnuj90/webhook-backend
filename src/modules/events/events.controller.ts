@@ -6,6 +6,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { EventsService } from './events.service';
 import { EventStatus } from './schemas/event.schema';
+import { SendEventToEndpointDto } from './dto/send-event.dto';
 
 @ApiTags('Events')
 @ApiBearerAuth('JWT')
@@ -22,7 +23,7 @@ export class EventsController {
   @ApiResponse({ status: 400, description: 'Validation error' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   @ApiResponse({ status: 404, description: 'Project or endpoint not found' })
-  send(@Param('projectId') projectId: string, @Body() dto: { endpointId: string; eventType: string; payload: any; idempotencyKey?: string }) {
+  send(@Param('projectId') projectId: string, @Body() dto: SendEventToEndpointDto) {
     return this.eventsService.send(projectId, dto.endpointId, dto);
   }
 

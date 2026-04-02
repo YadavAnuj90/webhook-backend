@@ -6,28 +6,40 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { RegisterDto } from './dto/register.dto';
+import { LoginDto } from './dto/login.dto';
+import { RefreshDto } from './dto/refresh.dto';
+import { ForgotPasswordDto } from './dto/forgot-password.dto';
+import { ResetPasswordDto } from './dto/reset-password.dto';
+import { ChangePasswordDto } from './dto/change-password.dto';
+import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { SkipEmailVerification } from '../../common/guards/email-verified.guard';
+import { Throttle, SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Auth')
 @Controller('auth')
+@SkipEmailVerification()   // Auth routes must be accessible before email verification
 export class AuthController {
   constructor(private authService: AuthService) {}
 
   @Post('register')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Register a new account' })
   @ApiBody({ schema: { required: ['email', 'password', 'firstName', 'lastName'], properties: { email: { type: 'string', example: 'user@example.com' }, password: { type: 'string', example: 'Password123!' }, firstName: { type: 'string', example: 'John' }, lastName: { type: 'string', example: 'Doe' } } } })
   @ApiResponse({ status: 201, description: 'Account created, verification email sent' })
   @ApiResponse({ status: 409, description: 'Email already registered' })
   @ApiResponse({ status: 400, description: 'Validation error' })
-  register(@Body() dto: { email: string; password: string; firstName: string; lastName: string }, @Ip() ip: string) {
+  register(@Body() dto: RegisterDto, @Ip() ip: string) {
     return this.authService.register(dto, ip);
   }
 
   @Post('login')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiBody({ schema: { required: ['email', 'password'], properties: { email: { type: 'string', example: 'user@example.com' }, password: { type: 'string', example: 'Password123!' } } } })
   @ApiResponse({ status: 200, description: 'Returns accessToken, refreshToken, and user object' })
   @ApiResponse({ status: 401, description: 'Invalid credentials' })
-  login(@Body() dto: { email: string; password: string }, @Ip() ip: string, @Headers('user-agent') ua: string) {
+  login(@Body() dto: LoginDto, @Ip() ip: string, @Headers('user-agent') ua: string) {
     return this.authService.login(dto.email, dto.password, ip, ua || 'Web');
   }
 
@@ -38,8 +50,8 @@ export class AuthController {
   @ApiBody({ schema: { required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } } })
   @ApiResponse({ status: 200, description: 'Session revoked' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  logout(@Request() req: any, @Body() body: { refreshToken: string }, @Ip() ip: string) {
-    return this.authService.logout(req.user.id, body.refreshToken, ip);
+  logout(@Request() req: any, @Body() dto: RefreshDto, @Ip() ip: string) {
+    return this.authService.logout(req.user.id, dto.refreshToken, ip);
   }
 
   @Post('logout-all')
@@ -57,8 +69,8 @@ export class AuthController {
   @ApiBody({ schema: { required: ['refreshToken'], properties: { refreshToken: { type: 'string' } } } })
   @ApiResponse({ status: 200, description: 'Returns new accessToken and refreshToken' })
   @ApiResponse({ status: 401, description: 'Invalid or expired refresh token' })
-  refresh(@Body() body: { refreshToken: string }, @Ip() ip: string) {
-    return this.authService.refresh(body.refreshToken, ip);
+  refresh(@Body() dto: RefreshDto, @Ip() ip: string) {
+    return this.authService.refresh(dto.refreshToken, ip);
   }
 
   @Get('me')
@@ -82,12 +94,13 @@ export class AuthController {
   }
 
   @Post('forgot-password')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Request a password reset email' })
   @ApiBody({ schema: { required: ['email'], properties: { email: { type: 'string', example: 'user@example.com' } } } })
   @ApiResponse({ status: 200, description: 'Reset email sent if account exists' })
   @ApiResponse({ status: 400, description: 'Validation error' })
-  forgotPassword(@Body() body: { email: string }) {
-    return this.authService.requestPasswordReset(body.email);
+  forgotPassword(@Body() dto: ForgotPasswordDto) {
+    return this.authService.requestPasswordReset(dto.email);
   }
 
   @Post('reset-password')
@@ -95,8 +108,8 @@ export class AuthController {
   @ApiBody({ schema: { required: ['token', 'password'], properties: { token: { type: 'string', description: 'Token from reset email' }, password: { type: 'string', example: 'NewPassword123!' } } } })
   @ApiResponse({ status: 200, description: 'Password reset successful' })
   @ApiResponse({ status: 400, description: 'Invalid or expired token' })
-  resetPassword(@Body() body: { token: string; password: string }, @Ip() ip: string) {
-    return this.authService.resetPassword(body.token, body.password, ip);
+  resetPassword(@Body() dto: ResetPasswordDto, @Ip() ip: string) {
+    return this.authService.resetPassword(dto.token, dto.password, ip);
   }
 
   @Post('change-password')
@@ -107,8 +120,8 @@ export class AuthController {
   @ApiResponse({ status: 200, description: 'Password changed successfully' })
   @ApiResponse({ status: 400, description: 'Old password is incorrect' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  changePassword(@Request() req: any, @Body() body: { oldPassword: string; newPassword: string }, @Ip() ip: string) {
-    return this.authService.changePassword(req.user.id, body.oldPassword, body.newPassword, ip);
+  changePassword(@Request() req: any, @Body() dto: ChangePasswordDto, @Ip() ip: string) {
+    return this.authService.changePassword(req.user.id, dto.oldPassword, dto.newPassword, ip);
   }
 
   @Post('api-keys')
@@ -118,8 +131,8 @@ export class AuthController {
   @ApiBody({ schema: { required: ['name'], properties: { name: { type: 'string', example: 'CI/CD Key' }, scopes: { type: 'array', items: { type: 'string' }, example: ['webhooks:read', 'webhooks:write'] }, expiresAt: { type: 'string', format: 'date-time' } } } })
   @ApiResponse({ status: 201, description: 'API key created — plaintext key returned once only' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  createApiKey(@Request() req: any, @Body() body: { name: string; scopes?: string[]; expiresAt?: string }, @Ip() ip: string) {
-    return this.authService.createApiKey(req.user.id, body.name, body.scopes || [], body.expiresAt, ip);
+  createApiKey(@Request() req: any, @Body() dto: CreateApiKeyDto, @Ip() ip: string) {
+    return this.authService.createApiKey(req.user.id, dto.name, dto.scopes || [], dto.expiresAt, ip);
   }
 
   @Get('api-keys')

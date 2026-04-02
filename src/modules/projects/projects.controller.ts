@@ -9,6 +9,7 @@ import {
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { ProjectsService, CreateProjectDto, UpdateProjectDto } from './projects.service';
+import { AddMemberDto } from './dto/project.dto';
 
 @ApiTags('Projects')
 @ApiBearerAuth('JWT')
@@ -79,9 +80,9 @@ export class ProjectsController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   addMember(
     @Param('id') id: string,
-    @Body() body: { userId: string; role: string },
+    @Body() dto: AddMemberDto,
     @Request() req: any,
   ) {
-    return this.projectsService.addMember(id, req.user.id, body.userId, body.role);
+    return this.projectsService.addMember(id, req.user.id, dto.userId, dto.role);
   }
 }

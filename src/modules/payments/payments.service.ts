@@ -94,6 +94,23 @@ export class PaymentsService {
     if (digest !== signature) throw new BadRequestException('Invalid webhook signature');
 
     const event = body.event as string;
+
+    // ── Idempotency: skip if we've already processed this payment ────────────
+    // Razorpay may deliver the same webhook more than once (network retries).
+    // We use the payment/subscription entity ID as a natural idempotency key.
+    const entityId: string | undefined =
+      body.payload?.payment?.entity?.id ??
+      body.payload?.subscription?.entity?.id;
+
+    if (entityId) {
+      // Check if this paymentId was already stored on any user record
+      const alreadyProcessed = await this.userModel.exists({ razorpayPaymentId: entityId });
+      if (alreadyProcessed) {
+        this.logger.log(`Webhook idempotency: skipping already-processed event ${event} for ${entityId}`);
+        return { received: true, skipped: true };
+      }
+    }
+
     this.logger.log(`Razorpay webhook: ${event}`);
 
     // ─── payment.captured ────────────────────────────────────────────────────

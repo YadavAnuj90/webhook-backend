@@ -8,6 +8,8 @@ import { UsersService } from './users.service';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole, UserStatus } from './schemas/user.schema';
+import { UpdateProfileDto } from './dto/update-profile.dto';
+import { UpdatePreferencesDto } from './dto/update-preferences.dto';
 
 @ApiTags('Users')
 @ApiBearerAuth('JWT')
@@ -21,7 +23,7 @@ export class UsersController {
   @ApiBody({ schema: { properties: { firstName: { type: 'string' }, lastName: { type: 'string' }, phone: { type: 'string' }, company: { type: 'string' }, timezone: { type: 'string', example: 'Asia/Kolkata' }, language: { type: 'string', example: 'en' } } } })
   @ApiResponse({ status: 200, description: 'Updated user profile' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  updateProfile(@Body() dto: any, @Request() req: any, @Ip() ip: string) {
+  updateProfile(@Body() dto: UpdateProfileDto, @Request() req: any, @Ip() ip: string) {
     return this.usersService.updateProfile(req.user.id, dto, ip);
   }
 
@@ -30,7 +32,7 @@ export class UsersController {
   @ApiBody({ schema: { properties: { theme: { type: 'string', enum: ['dark', 'light'] }, emailNotifications: { type: 'boolean' }, slackNotifications: { type: 'boolean' } } } })
   @ApiResponse({ status: 200, description: 'Updated preferences' })
   @ApiResponse({ status: 401, description: 'Unauthorized' })
-  updatePreferences(@Body() dto: any, @Request() req: any) {
+  updatePreferences(@Body() dto: UpdatePreferencesDto, @Request() req: any) {
     return this.usersService.updatePreferences(req.user.id, dto);
   }
 

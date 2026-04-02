@@ -1,19 +1,22 @@
-import { Controller, Get, Query, Param, UseGuards } from '@nestjs/common';
+import { Controller, Get, Query, Param, UseGuards, UseInterceptors } from '@nestjs/common';
 import {
   ApiTags, ApiBearerAuth, ApiOperation,
   ApiResponse, ApiParam, ApiQuery,
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { AnalyticsService } from './analytics.service';
+import { CacheResponseInterceptor, CacheTtl } from '../../common/interceptors/cache-response.interceptor';
 
 @ApiTags('Analytics')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'))
+@UseInterceptors(CacheResponseInterceptor)
 @Controller('projects/:projectId/analytics')
 export class AnalyticsController {
   constructor(private analyticsService: AnalyticsService) {}
 
   @Get('summary')
+  @CacheTtl(30)
   @ApiOperation({ summary: 'Get analytics summary: totals, success rate, avg latency for a time window' })
   @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
   @ApiQuery({ name: 'days', required: false, type: Number, example: 30, description: 'Look-back window in days (default 30)' })
