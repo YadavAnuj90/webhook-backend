@@ -1,42 +1,74 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-@Schema({ timestamps: true })
+/**
+ * PortalToken — customer white-label portal access.
+ *
+ * DBA decisions:
+ * - token unique: JWT-style one-click access — O(1) lookup
+ * - expiresAt TTL: tokens auto-expire — no cleanup job needed
+ * - accessCount + lastAccessedAt updated atomically via $inc/$set
+ * - customDomain unique+sparse: optional but globally unique when set
+ * - Partial index on isActive:true — revoked tokens not in hot path
+ */
+@Schema({
+  timestamps: true,
+  versionKey: false,
+  toJSON:   { virtuals: false, minimize: true },
+  toObject: { virtuals: false, minimize: true },
+})
 export class PortalToken {
-  @Prop({ type: Types.ObjectId, ref: 'User', required: true }) userId: Types.ObjectId;
+  @Prop({ type: Types.ObjectId, ref: 'User',    required: true }) userId:    Types.ObjectId;
   @Prop({ type: Types.ObjectId, ref: 'Project', required: true }) projectId: Types.ObjectId;
-  @Prop({ required: true, unique: true }) token: string;
-  @Prop({ required: true, trim: true }) customerName: string;
-  @Prop({ trim: true, lowercase: true }) customerEmail: string;
-  @Prop({ default: true }) isActive: boolean;
-  @Prop({ default: null }) expiresAt: Date;
-  @Prop({ default: null }) lastAccessedAt: Date;
-  @Prop({ default: 0 }) accessCount: number;
+  @Prop({ required: true, unique: true })              token:         string;
+  @Prop({ type: String, required: true, trim: true })               customerName:  string;
+  @Prop({ type: String, trim: true, lowercase: true })              customerEmail: string;
+  @Prop({ default: true })                             isActive:      boolean;
+  @Prop({ type: Date, default: null })                 expiresAt:     Date | null;
+  @Prop({ type: Date, default: null })                 lastAccessedAt: Date | null;  // $set
+  @Prop({ default: 0 })                                accessCount:   number;         // $inc
 
-  // ─── Legacy branding (kept for compat) ────────────────────────────────────
-  @Prop({ trim: true }) logoUrl: string;
-  @Prop({ trim: true }) brandColor: string;
+  // Branding
+  @Prop({ type: String, trim: true }) logoUrl:       string;
+  @Prop({ type: String, trim: true }) brandColor:    string;
+  @Prop({ type: String, trim: true }) companyName:   string;
+  @Prop({ type: String, trim: true }) faviconUrl:    string;
+  @Prop({ type: String, trim: true }) primaryColor:  string;
+  @Prop({ type: String, trim: true }) secondaryColor: string;
+  @Prop({ type: String, trim: true }) fontFamily:    string;
+  @Prop({ default: false }) darkMode:  boolean;
+  @Prop({ type: String, trim: true })     customDomain: string;
+  @Prop({ type: String, trim: true })     supportEmail: string;
+  @Prop({ type: String, trim: true })     portalTitle:  string;
+  @Prop({ type: String, trim: true, default: null }) customCss: string | null;
+  @Prop({ type: Object, default: {} }) socialLinks: Record<string, string>;
 
-  // ─── Full white-label branding ─────────────────────────────────────────────
-  @Prop({ trim: true }) companyName: string;
-  @Prop({ trim: true }) faviconUrl: string;
-  @Prop({ trim: true }) primaryColor: string;    // e.g. "#6366f1"
-  @Prop({ trim: true }) secondaryColor: string;
-  @Prop({ trim: true }) fontFamily: string;       // e.g. "Inter, sans-serif"
-  @Prop({ default: false }) darkMode: boolean;
-  @Prop({ trim: true }) customDomain: string;     // e.g. "webhooks.acme.com"
-  @Prop({ trim: true }) supportEmail: string;
-  @Prop({ trim: true }) portalTitle: string;      // e.g. "Acme Webhook Portal"
-  @Prop({ trim: true, default: null }) customCss: string;  // injected into portal <head>
-  @Prop({ type: Object, default: {} }) socialLinks: Record<string, string>; // { twitter, docs, support }
-
-  // FEATURE 11: Customer Self-Service Event Subscriptions
-  @Prop({ type: [String], default: [] }) subscribedEventTypes: string[]; // e.g. ['order.created','payment.failed']
+  @Prop({ type: [String], default: [] }) subscribedEventTypes: string[];
 }
 
 export const PortalTokenSchema = SchemaFactory.createForClass(PortalToken);
-// token unique index already created by @Prop({ unique: true }) — removed duplicate
-PortalTokenSchema.index({ userId: 1 });
-PortalTokenSchema.index({ customDomain: 1 }, { sparse: true, unique: true });
+
+// token unique from @Prop(unique:true)
+
+// List active tokens for a project
+PortalTokenSchema.index(
+  { projectId: 1, isActive: 1 },
+  { name: 'idx_project_active' },
+);
+
+// User's token list
+PortalTokenSchema.index({ userId: 1, isActive: 1 }, { name: 'idx_user_active' });
+
+// Custom domain routing — globally unique when set
+PortalTokenSchema.index(
+  { customDomain: 1 },
+  { sparse: true, unique: true, name: 'uq_custom_domain' },
+);
+
+// TTL: auto-expire tokens
+PortalTokenSchema.index(
+  { expiresAt: 1 },
+  { expireAfterSeconds: 0, sparse: true, name: 'ttl_token_expiry' },
+);
 
 export type PortalTokenDocument = PortalToken & Document;

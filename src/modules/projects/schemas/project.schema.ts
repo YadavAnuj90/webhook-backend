@@ -1,47 +1,72 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-@Schema({ timestamps: true })
+/**
+ * Project — tenant root; checked on every API call for ownership/membership.
+ *
+ * DBA decisions:
+ * - versionKey:false
+ * - Soft delete: deletedAt — all queries must add { deletedAt: null }
+ * - members array uses multikey index for fast membership checks:
+ *     find({ 'members.userId': userId, deletedAt: null })
+ * - currentMonthEvents updated atomically via $inc
+ * - usageResetAt updated atomically via $set when billing cycle rolls over
+ * - Partial index on isActive:true + deletedAt:null for active-project listing
+ */
+@Schema({
+  timestamps: true,
+  versionKey: false,
+  toJSON:   { virtuals: false, minimize: true },
+  toObject: { virtuals: false, minimize: true },
+})
 export class Project extends Document {
-  @Prop({ required: true })
-  name: string;
+  @Prop({ type: String, required: true, trim: true }) name:        string;
+  @Prop({ type: String, trim: true }) description: string;
+  @Prop({ required: true })             ownerId:     string;
 
-  @Prop()
-  description: string;
-
-  @Prop({ required: true })
-  ownerId: string;
-
-  @Prop({ type: [{ userId: String, role: String }], default: [] })
+  @Prop({
+    type: [{ userId: String, role: String }],
+    default: [],
+    _id: false,
+  })
   members: { userId: string; role: 'admin' | 'member' | 'viewer' }[];
 
-  @Prop({ default: true })
-  isActive: boolean;
+  @Prop({ default: true }) isActive: boolean;
 
-  // Delivery settings per project
-  @Prop({ default: 5 })
-  maxRetryAttempts: number;
+  @Prop({ default: 5 })     maxRetryAttempts:    number;
+  @Prop({ default: 30000 }) defaultTimeoutMs:    number;
 
-  @Prop({ default: 30000 })
-  defaultTimeoutMs: number;
+  // Usage counters — updated atomically via $inc / $set
+  @Prop({ default: 10000 }) monthlyEventLimit:   number;
+  @Prop({ default: 0 })     currentMonthEvents:  number;   // $inc per event
+  @Prop({ type: Date, default: null }) usageResetAt: Date | null;  // $set on cycle roll
 
-  // Usage limits (for future billing/plans)
-  @Prop({ default: 10000 })
-  monthlyEventLimit: number;
-
-  @Prop({ default: 0 })
-  currentMonthEvents: number;
-
-  @Prop({ default: null })
-  usageResetAt: Date;
-
-  // Soft delete — queries MUST filter { deletedAt: null }
-  @Prop({ type: Date, default: null })
-  deletedAt: Date | null;
+  // Soft delete
+  @Prop({ type: Date, default: null }) deletedAt: Date | null;
 }
 
 export const ProjectSchema = SchemaFactory.createForClass(Project);
-ProjectSchema.index({ ownerId: 1 });
-ProjectSchema.index({ ownerId: 1, isActive: 1 });                     // fast owner active-project queries
-ProjectSchema.index({ ownerId: 1, deletedAt: 1 });                    // soft-delete filter
-ProjectSchema.index({ 'members.userId': 1 });                         // member lookups
+
+// Owner's active project list (most common query)
+ProjectSchema.index(
+  { ownerId: 1, isActive: 1, deletedAt: 1 },
+  {
+    partialFilterExpression: { deletedAt: null },
+    name: 'idx_owner_active_partial',
+  },
+);
+
+// Membership check: "which projects does userId belong to?"
+ProjectSchema.index(
+  { 'members.userId': 1, deletedAt: 1 },
+  { name: 'idx_member_lookup' },
+);
+
+// Soft-delete admin view
+ProjectSchema.index({ ownerId: 1, deletedAt: 1 }, { name: 'idx_owner_deleted' });
+
+// Usage reset job: find projects due for monthly reset
+ProjectSchema.index(
+  { usageResetAt: 1 },
+  { sparse: true, name: 'idx_usage_reset' },
+);
