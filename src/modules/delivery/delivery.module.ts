@@ -11,6 +11,7 @@ import { EndpointsModule } from '../endpoints/endpoints.module';
 import { AnalyticsModule } from '../analytics/analytics.module';
 import { MetricsModule } from '../metrics/metrics.module';
 import { NotificationsModule } from '../notifications/notifications.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 import { FilterEngineService } from '../../utils/filter-engine.service';
 import { WEBHOOK_QUEUE, DEAD_LETTER_QUEUE } from '../../queue/queue.constants';
 import { Process, Processor } from '@nestjs/bull';
@@ -59,6 +60,7 @@ export class DlqProcessor {
     AnalyticsModule,
     MetricsModule,
     NotificationsModule,
+    RealtimeModule,
   ],
   providers: [
     DeliveryService,

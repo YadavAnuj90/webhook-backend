@@ -2,13 +2,15 @@ import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
 export enum EventStatus {
-  PENDING      = 'pending',
-  DELIVERED    = 'delivered',
-  FAILED       = 'failed',
-  DEAD         = 'dead',
-  FILTERED     = 'filtered',
-  RATE_LIMITED = 'rate_limited',
-  RETRYING     = 'retrying',
+  PENDING        = 'pending',
+  DELIVERED      = 'delivered',
+  FAILED         = 'failed',
+  DEAD           = 'dead',
+  FILTERED       = 'filtered',
+  RATE_LIMITED   = 'rate_limited',
+  RATE_QUEUED    = 'rate_queued',     // queued for drip-delivery when rate window opens
+  RETRYING       = 'retrying',
+  SCHEDULED      = 'scheduled',       // delayed delivery — scheduled for future
 }
 
 /**

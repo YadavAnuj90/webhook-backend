@@ -34,6 +34,7 @@ import { PiiScrubber } from '../../utils/pii-scrubber';
 import { PayloadCrypto } from '../../utils/payload-crypto';
 import { isInMaintenanceWindow } from '../../utils/maintenance-window';
 import { WEBHOOK_QUEUE, DEAD_LETTER_QUEUE } from '../../queue/queue.constants';
+import { RealtimeService } from '../realtime/realtime.service';
 
 // OAuth2 token cache: endpointId → { token, expiresAt }
 const oauth2TokenCache = new Map<string, { token: string; expiresAt: number }>();
@@ -55,6 +56,7 @@ export class DeliveryService {
     private analytics: AnalyticsService,
     private metrics: MetricsService,
     private notifications: NotificationsService,
+    private realtime: RealtimeService,
   ) {}
 
   async deliver(eventId: string): Promise<void> {
@@ -106,15 +108,54 @@ export class DeliveryService {
         project_id: event.projectId,
         endpoint_id: endpoint.id,
       });
+      this.realtime.notifyDeliveryFiltered({
+        projectId: event.projectId,
+        endpointId: endpoint.id,
+        eventId: event.id,
+        eventType: event.eventType,
+      });
       return;
     }
 
-    // ─── 2. Rate Limiting ─────────────────────────────────────────────────────
-    const { allowed, reason } = await this.rateLimiter.checkRateLimit(endpoint.id);
-    if (!allowed) {
-      await this.eventModel.findByIdAndUpdate(eventId, { status: EventStatus.RATE_LIMITED });
-      await this.analytics.record({ projectId: event.projectId, endpointId: endpoint.id, metric: 'rateLimited' });
-      this.metrics.webhooksRateLimited.inc({ project_id: event.projectId, endpoint_id: endpoint.id });
+    // ─── 2. Rate Limiting — drip-delivery queuing instead of hard rejection ───
+    const rateLimitResult = await this.rateLimiter.checkRateLimit(endpoint.id);
+    if (!rateLimitResult.allowed) {
+      const retryAfterMs = rateLimitResult.retryAfterMs || 60_000;
+
+      // Cap drip-delivery delay: max 1 hour. Beyond that → hard rate-limit.
+      if (retryAfterMs > 3_600_000) {
+        await this.eventModel.findByIdAndUpdate(eventId, { status: EventStatus.RATE_LIMITED });
+        await this.analytics.record({ projectId: event.projectId, endpointId: endpoint.id, metric: 'rateLimited' });
+        this.metrics.webhooksRateLimited.inc({ project_id: event.projectId, endpoint_id: endpoint.id });
+        this.logger.warn(`Event ${eventId} hard rate-limited (${rateLimitResult.limitType} window, retry > 1h)`);
+        return;
+      }
+
+      // Drip-deliver: queue the event for re-delivery when the window resets
+      await this.eventModel.findByIdAndUpdate(eventId, {
+        status: EventStatus.RATE_QUEUED,
+        nextRetryAt: new Date(Date.now() + retryAfterMs),
+      });
+      await this.webhookQueue.add(
+        'deliver',
+        { eventId },
+        {
+          delay: retryAfterMs,
+          attempts: 1,
+          jobId: `drip-${eventId}-${Date.now()}`,
+          removeOnComplete: true,
+        },
+      );
+      this.realtime.notifyRateQueued({
+        projectId: event.projectId,
+        endpointId: endpoint.id,
+        eventId: event.id,
+        eventType: event.eventType,
+        retryAfterMs,
+      });
+      this.logger.log(
+        `Event ${eventId} drip-queued: delivering in ${Math.ceil(retryAfterMs / 1000)}s (${rateLimitResult.limitType} limit)`,
+      );
       return;
     }
 
@@ -277,6 +318,16 @@ export class DeliveryService {
         this.logger.log(
           `Delivered ${event.id} → ${targetUrl} [${response.status}] in ${latencyMs}ms`,
         );
+
+        // Real-time notification
+        this.realtime.notifyDeliverySuccess({
+          projectId: event.projectId,
+          endpointId: endpoint.id,
+          eventId: event.id,
+          eventType: event.eventType,
+          statusCode: response.status,
+          latencyMs,
+        });
 
         // FEATURE 12: Fire-and-forget shadow delivery
         if (endpoint.shadowUrl) {
@@ -499,6 +550,14 @@ export class DeliveryService {
         endpoint.url,
         errorMessage,
       );
+      this.realtime.notifyDeliveryDead({
+        projectId: event.projectId,
+        endpointId: endpoint.id,
+        eventId: event.id,
+        eventType: event.eventType,
+        retryCount: newRetryCount,
+        errorMessage,
+      });
       this.logger.warn(`Event ${event.id} → DLQ after ${newRetryCount} attempts`);
     } else {
       // FEATURE 16: Use endpoint-specific retry strategy
@@ -516,6 +575,17 @@ export class DeliveryService {
         lastResponse,
       });
       await this.scheduleRetry(event, newRetryCount);
+
+      this.realtime.notifyDeliveryFailed({
+        projectId: event.projectId,
+        endpointId: endpoint.id,
+        eventId: event.id,
+        eventType: event.eventType,
+        statusCode,
+        errorMessage,
+        retryCount: newRetryCount,
+        nextRetryAt,
+      });
     }
   }
 

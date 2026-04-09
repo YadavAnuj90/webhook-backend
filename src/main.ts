@@ -138,6 +138,9 @@ async function bootstrap() {
     .addTag('Event Catalog',          'Event type registry with JSON Schema validation and contract testing')
     .addTag('Operational Webhooks',   'System-event webhooks (delivery.success, delivery.failed, etc.)')
     .addTag('Tunnel',                 'CLI dev tunnel — forward live webhooks to localhost during development')
+    .addTag('Realtime',               'WebSocket real-time delivery event feed (connect to /realtime namespace)')
+    .addTag('Scheduling',             'Delayed webhook delivery — schedule events for future delivery')
+    .addTag('Permissions',            'Fine-grained RBAC permission management for projects and workspaces')
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

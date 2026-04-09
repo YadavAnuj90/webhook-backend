@@ -121,9 +121,56 @@ export class AuthService {
       await this.auditService.log({ userId: user.id, userEmail: user.email, action: AuditAction.LOGIN, ipAddress: ip, outcome: 'failure' });
       throw new UnauthorizedException('Invalid credentials');
     }
+
+    // ── 2FA: If enabled, return a temporary challenge token instead of full tokens ──
+    if (user.twoFactorEnabled) {
+      const challengeToken = this.jwtService.sign(
+        { sub: user.id, purpose: '2fa_challenge' },
+        { secret: this.config.get('JWT_SECRET'), expiresIn: '5m' },
+      );
+      return {
+        requiresTwoFactor: true,
+        challengeToken,
+        user: { email: user.email, firstName: user.firstName },
+      };
+    }
+
     await this.userModel.findByIdAndUpdate(user.id, { lastLoginAt: new Date(), lastLoginIp: ip, $inc: { loginCount: 1 } });
     const tokens = await this.issueTokens(user, ip, device);
     await this.auditService.log({ userId: user.id, userEmail: user.email, action: AuditAction.LOGIN, ipAddress: ip });
+    return { user: this.safeUser(user), ...tokens };
+  }
+
+  /**
+   * Complete 2FA login: validate challenge token + TOTP code, then issue real tokens.
+   */
+  async verify2faLogin(
+    challengeToken: string,
+    code: string,
+    ip: string,
+    device: string,
+    twoFactorService: any,
+  ) {
+    let payload: any;
+    try {
+      payload = this.jwtService.verify(challengeToken, { secret: this.config.get('JWT_SECRET') });
+    } catch {
+      throw new UnauthorizedException('Invalid or expired 2FA challenge token');
+    }
+    if (payload.purpose !== '2fa_challenge') {
+      throw new UnauthorizedException('Invalid token purpose');
+    }
+
+    const userId = payload.sub;
+    const valid = await twoFactorService.validateLoginCode(userId, code);
+    if (!valid) throw new UnauthorizedException('Invalid two-factor code');
+
+    const user = await this.userModel.findById(userId);
+    if (!user) throw new UnauthorizedException('User not found');
+
+    await this.userModel.findByIdAndUpdate(user.id, { lastLoginAt: new Date(), lastLoginIp: ip, $inc: { loginCount: 1 } });
+    const tokens = await this.issueTokens(user, ip, device);
+    await this.auditService.log({ userId: user.id, userEmail: user.email, action: AuditAction.TWO_FACTOR_LOGIN, ipAddress: ip });
     return { user: this.safeUser(user), ...tokens };
   }
 

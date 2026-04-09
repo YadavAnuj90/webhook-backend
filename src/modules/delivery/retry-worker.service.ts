@@ -30,7 +30,7 @@ export class RetryWorkerService {
   async rescheduleFailedEvents() {
     const now = new Date();
     const events = await this.eventModel.find({
-      status: EventStatus.FAILED,
+      status: { $in: [EventStatus.FAILED, EventStatus.RATE_QUEUED] },
       nextRetryAt: { $lte: now },
     }).limit(100).exec();
 

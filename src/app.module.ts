@@ -38,6 +38,9 @@ import { DeduplicationModule } from './modules/deduplication/deduplication.modul
 import { SlaModule } from './modules/sla/sla.module';
 import { AiModule } from './modules/ai/ai.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { RealtimeModule } from './modules/realtime/realtime.module';
+import { SchedulingModule } from './modules/scheduling/scheduling.module';
+import { PermissionsModule } from './modules/permissions/permissions.module';
 
 @Module({
   imports: [
@@ -113,6 +116,15 @@ import { BillingModule } from './modules/billing/billing.module';
 
     // ─── Billing: Trial, Subscriptions, Credits, Reseller ────────────────────
     BillingModule,
+
+    // Real-time WebSocket gateway
+    RealtimeModule,
+
+    // Delayed webhook scheduling
+    SchedulingModule,
+
+    // Fine-grained RBAC permissions
+    PermissionsModule,
   ],
   providers: [
     // ── Global rate-limit guard (applies to every route; skip with @SkipThrottle()) ──

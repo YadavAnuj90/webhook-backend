@@ -6,6 +6,7 @@ import {
 import { AuthGuard } from '@nestjs/passport';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 import { RegisterDto } from './dto/register.dto';
 import { LoginDto } from './dto/login.dto';
 import { RefreshDto } from './dto/refresh.dto';
@@ -13,6 +14,7 @@ import { ForgotPasswordDto } from './dto/forgot-password.dto';
 import { ResetPasswordDto } from './dto/reset-password.dto';
 import { ChangePasswordDto } from './dto/change-password.dto';
 import { CreateApiKeyDto } from './dto/create-api-key.dto';
+import { VerifyTwoFactorDto, DisableTwoFactorDto, TwoFactorLoginDto } from './dto/two-factor.dto';
 import { SkipEmailVerification } from '../../common/guards/email-verified.guard';
 import { Throttle, SkipThrottle } from '@nestjs/throttler';
 
@@ -20,7 +22,10 @@ import { Throttle, SkipThrottle } from '@nestjs/throttler';
 @Controller('auth')
 @SkipEmailVerification()   // Auth routes must be accessible before email verification
 export class AuthController {
-  constructor(private authService: AuthService) {}
+  constructor(
+    private authService: AuthService,
+    private twoFactorService: TwoFactorService,
+  ) {}
 
   @Post('register')
   @Throttle({ auth: { limit: 5, ttl: 60_000 } })
@@ -175,6 +180,74 @@ export class AuthController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   resendVerification(@Request() req: any) {
     return this.authService.resendVerification(req.user.id || req.user.userId);
+  }
+
+  // ── Two-Factor Authentication ─────────────────────────────────────────────
+
+  @Post('2fa/setup')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Generate TOTP secret and recovery codes for 2FA setup' })
+  @ApiResponse({ status: 200, description: 'TOTP secret, otpauth URL, and recovery codes' })
+  @ApiResponse({ status: 400, description: '2FA already enabled' })
+  setup2fa(@Request() req: any) {
+    return this.twoFactorService.generateSetup(req.user.id);
+  }
+
+  @Post('2fa/verify')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Verify TOTP code and enable 2FA' })
+  @ApiBody({ type: VerifyTwoFactorDto })
+  @ApiResponse({ status: 200, description: '2FA enabled successfully' })
+  @ApiResponse({ status: 400, description: 'Invalid TOTP code' })
+  verify2fa(@Request() req: any, @Body() dto: VerifyTwoFactorDto, @Ip() ip: string) {
+    return this.twoFactorService.verifyAndEnable(req.user.id, dto.code, ip);
+  }
+
+  @Post('2fa/disable')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Disable 2FA (requires current TOTP code)' })
+  @ApiBody({ type: DisableTwoFactorDto })
+  @ApiResponse({ status: 200, description: '2FA disabled' })
+  @ApiResponse({ status: 401, description: 'Invalid TOTP code' })
+  disable2fa(@Request() req: any, @Body() dto: DisableTwoFactorDto, @Ip() ip: string) {
+    return this.twoFactorService.disable(req.user.id, dto.code, ip);
+  }
+
+  @Post('2fa/login')
+  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @ApiOperation({ summary: 'Complete login with 2FA code after receiving challengeToken' })
+  @ApiBody({ type: TwoFactorLoginDto, schema: { properties: { challengeToken: { type: 'string' }, code: { type: 'string', example: '123456' } } } })
+  @ApiResponse({ status: 200, description: 'Returns accessToken, refreshToken, and user' })
+  @ApiResponse({ status: 401, description: 'Invalid challenge token or 2FA code' })
+  login2fa(
+    @Body('challengeToken') challengeToken: string,
+    @Body() dto: TwoFactorLoginDto,
+    @Ip() ip: string,
+    @Headers('user-agent') ua: string,
+  ) {
+    return this.authService.verify2faLogin(challengeToken, dto.code, ip, ua || 'Web', this.twoFactorService);
+  }
+
+  @Get('2fa/status')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Get 2FA status and recovery codes remaining' })
+  @ApiResponse({ status: 200, description: '2FA enabled status and recovery codes count' })
+  get2faStatus(@Request() req: any) {
+    return this.twoFactorService.getStatus(req.user.id);
+  }
+
+  @Post('2fa/recovery-codes')
+  @UseGuards(AuthGuard('jwt'))
+  @ApiBearerAuth('JWT')
+  @ApiOperation({ summary: 'Regenerate recovery codes (requires current TOTP code)' })
+  @ApiBody({ type: VerifyTwoFactorDto })
+  @ApiResponse({ status: 200, description: 'New set of recovery codes' })
+  regenerateRecoveryCodes(@Request() req: any, @Body() dto: VerifyTwoFactorDto, @Ip() ip: string) {
+    return this.twoFactorService.regenerateRecoveryCodes(req.user.id, dto.code, ip);
   }
 
   // ── Google OAuth ─────────────────────────────────────────────────────────

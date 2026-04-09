@@ -63,6 +63,7 @@ export class User extends Document {
   // 2FA
   @Prop({ default: false }) twoFactorEnabled: boolean;
   @Prop({ type: String, default: null })  twoFactorSecret:  string | null;
+  @Prop({ type: [String], default: [] })  twoFactorRecoveryCodes: string[];
 
   // Billing
   @Prop({ type: String, default: null }) razorpayOrderId:   string | null;

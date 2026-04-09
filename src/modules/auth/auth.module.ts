@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
 // Use the canonical ApiKey schema from the apikeys module to prevent two registrations
@@ -33,7 +34,7 @@ import { BillingModule } from '../billing/billing.module';
     BillingModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, JwtStrategy, GoogleStrategy],
-  exports: [AuthService, JwtModule],
+  providers: [AuthService, TwoFactorService, JwtStrategy, GoogleStrategy],
+  exports: [AuthService, TwoFactorService, JwtModule],
 })
 export class AuthModule {}

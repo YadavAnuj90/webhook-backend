@@ -3,6 +3,15 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { Endpoint } from './schemas/endpoint.schema';
 
+export interface RateLimitResult {
+  allowed: boolean;
+  reason?: string;
+  /** If not allowed, delay in ms until the earliest rate window resets */
+  retryAfterMs?: number;
+  /** Which window was exceeded: 'minute' | 'hour' | 'day' */
+  limitType?: 'minute' | 'hour' | 'day';
+}
+
 @Injectable()
 export class EndpointRateLimiterService {
   private readonly logger = new Logger(EndpointRateLimiterService.name);
@@ -11,9 +20,12 @@ export class EndpointRateLimiterService {
 
   /**
    * Check if endpoint is within rate limits.
-   * Returns { allowed: boolean, reason?: string }
+   * Returns { allowed, reason?, retryAfterMs?, limitType? }
+   *
+   * When rate-limited, retryAfterMs tells the caller how long to delay
+   * before the window resets — enabling drip-delivery instead of rejection.
    */
-  async checkRateLimit(endpointId: string): Promise<{ allowed: boolean; reason?: string }> {
+  async checkRateLimit(endpointId: string): Promise<RateLimitResult> {
     const endpoint = await this.endpointModel.findById(endpointId);
     if (!endpoint) return { allowed: false, reason: 'Endpoint not found' };
 
@@ -41,15 +53,33 @@ export class EndpointRateLimiterService {
       Object.assign(endpoint, updates);
     }
 
-    // Check limits
+    // Check limits — return retryAfterMs for drip-delivery queuing
     if (endpoint.deliveriesThisMinute >= rl.maxPerMinute) {
-      return { allowed: false, reason: `Rate limit exceeded: ${rl.maxPerMinute}/min` };
+      const retryAfterMs = Math.max(0, (endpoint.minuteResetAt?.getTime() || now.getTime() + 60_000) - now.getTime());
+      return {
+        allowed: false,
+        reason: `Rate limit exceeded: ${rl.maxPerMinute}/min`,
+        retryAfterMs,
+        limitType: 'minute',
+      };
     }
     if (endpoint.deliveriesThisHour >= rl.maxPerHour) {
-      return { allowed: false, reason: `Rate limit exceeded: ${rl.maxPerHour}/hour` };
+      const retryAfterMs = Math.max(0, (endpoint.hourResetAt?.getTime() || now.getTime() + 3_600_000) - now.getTime());
+      return {
+        allowed: false,
+        reason: `Rate limit exceeded: ${rl.maxPerHour}/hour`,
+        retryAfterMs,
+        limitType: 'hour',
+      };
     }
     if (endpoint.deliveriesThisDay >= rl.maxPerDay) {
-      return { allowed: false, reason: `Rate limit exceeded: ${rl.maxPerDay}/day` };
+      const retryAfterMs = Math.max(0, (endpoint.dayResetAt?.getTime() || now.getTime() + 86_400_000) - now.getTime());
+      return {
+        allowed: false,
+        reason: `Rate limit exceeded: ${rl.maxPerDay}/day`,
+        retryAfterMs,
+        limitType: 'day',
+      };
     }
 
     // Increment counters

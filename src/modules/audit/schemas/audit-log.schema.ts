@@ -29,6 +29,11 @@ export enum AuditAction {
   BILLING_PAYMENT_ATTEMPT = 'billing.payment_attempt',
   BILLING_PAYMENT_SUCCESS = 'billing.payment_success_v2',
   BILLING_PAYMENT_FAILED  = 'billing.payment_failed_v2',
+  // 2FA
+  TWO_FACTOR_ENABLED               = 'auth.2fa_enabled',
+  TWO_FACTOR_DISABLED              = 'auth.2fa_disabled',
+  TWO_FACTOR_RECOVERY_REGENERATED  = 'auth.2fa_recovery_regenerated',
+  TWO_FACTOR_LOGIN                 = 'auth.2fa_login',
 }
 
 /**
