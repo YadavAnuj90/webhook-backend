@@ -212,7 +212,7 @@ export class AnalyticsService {
   async getHeatmap(projectId: string) {
     // MongoDB aggregation: group DeliveryLog by dayOfWeek + hour
     const raw = await this.deliveryLogModel.aggregate([
-      { $match: { projectId: new Types.ObjectId(projectId) } },
+      { $match: { projectId } },
       {
         $group: {
           _id: {

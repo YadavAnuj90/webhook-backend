@@ -28,7 +28,7 @@ export class AuthController {
   ) {}
 
   @Post('register')
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Register a new account' })
   @ApiBody({ schema: { required: ['email', 'password', 'firstName', 'lastName'], properties: { email: { type: 'string', example: 'user@example.com' }, password: { type: 'string', example: 'Password123!' }, firstName: { type: 'string', example: 'John' }, lastName: { type: 'string', example: 'Doe' } } } })
   @ApiResponse({ status: 201, description: 'Account created, verification email sent' })
@@ -39,7 +39,7 @@ export class AuthController {
   }
 
   @Post('login')
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   @ApiBody({ schema: { required: ['email', 'password'], properties: { email: { type: 'string', example: 'user@example.com' }, password: { type: 'string', example: 'Password123!' } } } })
   @ApiResponse({ status: 200, description: 'Returns accessToken, refreshToken, and user object' })
@@ -99,7 +99,7 @@ export class AuthController {
   }
 
   @Post('forgot-password')
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Request a password reset email' })
   @ApiBody({ schema: { required: ['email'], properties: { email: { type: 'string', example: 'user@example.com' } } } })
   @ApiResponse({ status: 200, description: 'Reset email sent if account exists' })
@@ -217,7 +217,7 @@ export class AuthController {
   }
 
   @Post('2fa/login')
-  @Throttle({ auth: { limit: 5, ttl: 60_000 } })
+  @Throttle({ auth: { limit: 10, ttl: 60_000 } })
   @ApiOperation({ summary: 'Complete login with 2FA code after receiving challengeToken' })
   @ApiBody({ type: TwoFactorLoginDto, schema: { properties: { challengeToken: { type: 'string' }, code: { type: 'string', example: '123456' } } } })
   @ApiResponse({ status: 200, description: 'Returns accessToken, refreshToken, and user' })

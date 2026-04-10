@@ -92,8 +92,8 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
       inject: [ConfigService],
     }),
     ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 200 },          // 200 req/min global
-      { name: 'auth',   ttl: 60_000, limit: 5   },          // 5 req/min on auth routes (login/register/forgot-password)
+      { name: 'global', ttl: 60_000, limit: 1000 },         // 1000 req/min global (dashboard loads ~30+ parallel calls)
+      { name: 'auth',   ttl: 60_000, limit: 10   },         // 10 req/min on auth routes (login/register/forgot-password)
     ]),
     ScheduleModule.forRoot(),
 
