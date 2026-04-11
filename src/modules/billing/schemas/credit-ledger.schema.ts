@@ -12,9 +12,39 @@ export class CreditPackage extends Document {
   @Prop({ default: true })  isActive:     boolean;
   @Prop({ default: 0 })     bonusCredits: number;
   @Prop({ default: 1 })     sortOrder:    number;
+  @Prop({ default: false }) contactSales: boolean; // If true, show "Contact Sales" instead of price
+}
+
+// ─── Sales Inquiry (Enterprise "Contact Sales" form submissions) ─────────────
+export enum SalesInquiryStatus {
+  PENDING     = 'pending',
+  CONTACTED   = 'contacted',
+  CONVERTED   = 'converted',
+  CLOSED      = 'closed',
+}
+
+@Schema({ timestamps: true, versionKey: false })
+export class SalesInquiry extends Document {
+  @Prop({ required: true })              userId:       string;
+  @Prop({ required: true })              businessEmail: string;
+  @Prop({ required: true })              companyName:  string;
+  @Prop({ default: '' })                 companyUrl:   string;
+  @Prop({ default: '' })                 fullName:     string;
+  @Prop({ default: '' })                 phone:        string;
+  @Prop({ default: '' })                 teamSize:     string;
+  @Prop({ default: '' })                 useCase:      string;
+  @Prop({ default: '' })                 monthlyEvents: string;
+  @Prop({ type: String, default: null }) packageId:    string | null;
+  @Prop({ required: true, enum: SalesInquiryStatus, default: SalesInquiryStatus.PENDING })
+  status: SalesInquiryStatus;
+  @Prop({ type: String, default: null }) adminNotes:   string | null;
 }
 export const CreditPackageSchema = SchemaFactory.createForClass(CreditPackage);
 CreditPackageSchema.index({ isActive: 1, sortOrder: 1 }, { name: 'idx_active_sort' });
+
+export const SalesInquirySchema = SchemaFactory.createForClass(SalesInquiry);
+SalesInquirySchema.index({ userId: 1, createdAt: -1 }, { name: 'idx_sales_user_time' });
+SalesInquirySchema.index({ status: 1, createdAt: -1 }, { name: 'idx_sales_status_time' });
 
 // ─── Credit Balance ───────────────────────────────────────────────────────────
 /**

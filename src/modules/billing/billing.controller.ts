@@ -177,6 +177,67 @@ export class BillingController {
   }
 
   // ═══════════════════════════════════════════════════════════════════════════
+  //  SALES INQUIRIES (Enterprise "Contact Sales")
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  @Post('sales-inquiry')
+  @ApiOperation({ summary: 'Submit an enterprise sales inquiry (Contact Sales form)' })
+  @ApiBody({ schema: { required: ['businessEmail', 'companyName'], properties: {
+    businessEmail: { type: 'string' }, companyName: { type: 'string' },
+    companyUrl: { type: 'string' }, fullName: { type: 'string' },
+    phone: { type: 'string' }, teamSize: { type: 'string' },
+    useCase: { type: 'string' }, monthlyEvents: { type: 'string' },
+    packageId: { type: 'string' },
+  } } })
+  @ApiResponse({ status: 201, description: 'Sales inquiry submitted' })
+  @ApiResponse({ status: 400, description: 'Duplicate pending inquiry' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async submitSalesInquiry(@Req() req: any, @Body() body: {
+    businessEmail: string; companyName: string; companyUrl?: string;
+    fullName?: string; phone?: string; teamSize?: string;
+    useCase?: string; monthlyEvents?: string; packageId?: string;
+  }): Promise<any> {
+    return this.creditsSvc.submitSalesInquiry(req.user.userId, body);
+  }
+
+  @Get('sales-inquiry/mine')
+  @ApiOperation({ summary: 'Get my sales inquiry history' })
+  @ApiResponse({ status: 200, description: 'Array of sales inquiries' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getMyInquiries(@Req() req: any): Promise<any[]> {
+    return this.creditsSvc.getMyInquiries(req.user.userId);
+  }
+
+  @Get('sales-inquiry/all')
+  @ApiOperation({ summary: 'Admin: List all sales inquiries' })
+  @ApiQuery({ name: 'status', required: false, enum: ['pending', 'contacted', 'converted', 'closed'] })
+  @ApiQuery({ name: 'limit', required: false, type: Number })
+  @ApiQuery({ name: 'skip', required: false, type: Number })
+  @ApiResponse({ status: 200, description: 'Array of all sales inquiries' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async getAllInquiries(
+    @Query('status') status?: string,
+    @Query('limit') limit?: string,
+    @Query('skip') skip?: string,
+  ): Promise<any[]> {
+    return this.creditsSvc.getAllInquiries(status, +(limit || 50), +(skip || 0));
+  }
+
+  @Patch('sales-inquiry/:id/status')
+  @ApiOperation({ summary: 'Admin: Update sales inquiry status' })
+  @ApiParam({ name: 'id', description: 'Sales inquiry ID' })
+  @ApiBody({ schema: { required: ['status'], properties: { status: { type: 'string', enum: ['pending', 'contacted', 'converted', 'closed'] }, adminNotes: { type: 'string' } } } })
+  @ApiResponse({ status: 200, description: 'Inquiry status updated' })
+  @ApiResponse({ status: 404, description: 'Inquiry not found' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  async updateInquiryStatus(
+    @Param('id') id: string,
+    @Body() body: { status: string; adminNotes?: string },
+  ): Promise<any> {
+    return this.creditsSvc.updateInquiryStatus(id, body.status as any, body.adminNotes);
+  }
+
+  // ═══════════════════════════════════════════════════════════════════════════
   //  RESELLER PORTAL
   // ═══════════════════════════════════════════════════════════════════════════
 

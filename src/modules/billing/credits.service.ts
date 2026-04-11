@@ -8,6 +8,7 @@ import { Model } from 'mongoose';
 import { createHmac } from 'crypto';
 import {
   CreditPackage, CreditBalance, CreditTransaction, CreditTxType,
+  SalesInquiry, SalesInquiryStatus,
 } from './schemas/credit-ledger.schema';
 import { Invoice, InvoiceType, InvoiceStatus } from './schemas/invoice.schema';
 import { Subscription, SubscriptionStatus } from './schemas/subscription.schema';
@@ -33,6 +34,7 @@ export class CreditsService {
     @InjectModel(CreditTransaction.name) private txModel:      Model<CreditTransaction>,
     @InjectModel(Invoice.name)           private invoiceModel: Model<Invoice>,
     @InjectModel(Subscription.name)      private subModel:     Model<Subscription>,
+    @InjectModel(SalesInquiry.name)      private salesModel:   Model<SalesInquiry>,
     private config: ConfigService,
     private auditService: AuditService,
   ) {
@@ -52,11 +54,10 @@ export class CreditsService {
     const count = await this.pkgModel.countDocuments();
     if (count > 0) return;
     await this.pkgModel.insertMany([
-      { name: 'Micro Pack',    credits: 10_000,   bonusCredits: 0,       price: 49900,   description: '10K delivery credits',           sortOrder: 1 },
-      { name: 'Starter Pack',  credits: 50_000,   bonusCredits: 2_500,   price: 199900,  description: '50K + 2.5K bonus credits',       sortOrder: 2 },
-      { name: 'Growth Pack',   credits: 200_000,  bonusCredits: 20_000,  price: 699900,  description: '200K + 20K bonus credits',       sortOrder: 3 },
-      { name: 'Business Pack', credits: 1_000_000,bonusCredits: 150_000, price: 2999900, description: '1M + 150K bonus credits',        sortOrder: 4 },
-      { name: 'Enterprise Pack',credits: 5_000_000,bonusCredits: 1_000_000,price:12999900,description: '5M + 1M bonus credits',         sortOrder: 5 },
+      { name: 'Starter',    credits: 5_000,     bonusCredits: 0,         price: 99900,    description: 'Perfect for testing and small projects',                sortOrder: 1 },
+      { name: 'Growth',     credits: 25_000,    bonusCredits: 2_500,     price: 499900,   description: 'For growing apps with steady webhook traffic',          sortOrder: 2 },
+      { name: 'Business',   credits: 100_000,   bonusCredits: 15_000,    price: 1999900,  description: 'High-volume delivery with 15% bonus credits',          sortOrder: 3 },
+      { name: 'Enterprise', credits: 500_000,   bonusCredits: 100_000,   price: 0,        description: 'Custom pricing for large-scale webhook infrastructure', sortOrder: 4, contactSales: true },
     ]);
     this.logger.log('Seeded default credit packages');
   }
@@ -274,5 +275,70 @@ export class CreditsService {
       },
       { upsert: true, new: true },
     );
+  }
+
+  // ─── Sales Inquiry (Enterprise Contact Sales) ──────────────────────────────
+
+  async submitSalesInquiry(userId: string, dto: {
+    businessEmail: string; companyName: string; companyUrl?: string;
+    fullName?: string; phone?: string; teamSize?: string;
+    useCase?: string; monthlyEvents?: string; packageId?: string;
+  }) {
+    // Prevent duplicate pending inquiries from same user
+    const existing = await this.salesModel.findOne({
+      userId,
+      status: SalesInquiryStatus.PENDING,
+    });
+    if (existing) {
+      throw new BadRequestException(
+        'You already have a pending inquiry. Our sales team will contact you soon.',
+      );
+    }
+
+    const inquiry = await this.salesModel.create({
+      userId,
+      businessEmail: dto.businessEmail,
+      companyName: dto.companyName,
+      companyUrl: dto.companyUrl || '',
+      fullName: dto.fullName || '',
+      phone: dto.phone || '',
+      teamSize: dto.teamSize || '',
+      useCase: dto.useCase || '',
+      monthlyEvents: dto.monthlyEvents || '',
+      packageId: dto.packageId || null,
+      status: SalesInquiryStatus.PENDING,
+    });
+
+    this.logger.log(`New sales inquiry from ${dto.businessEmail} (user: ${userId})`);
+
+    await this.auditService.log({
+      userId,
+      action: AuditAction.BILLING_PAYMENT_ATTEMPT,
+      metadata: { type: 'sales_inquiry', inquiryId: inquiry._id, company: dto.companyName },
+    });
+
+    return { message: 'Thank you! Our sales team will contact you within 24 hours.', inquiryId: inquiry._id };
+  }
+
+  async getMyInquiries(userId: string) {
+    return this.salesModel.find({ userId }).sort({ createdAt: -1 }).lean();
+  }
+
+  /** Admin: list all sales inquiries */
+  async getAllInquiries(status?: string, limit = 50, skip = 0) {
+    const filter: any = {};
+    if (status) filter.status = status;
+    return this.salesModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean();
+  }
+
+  /** Admin: update inquiry status */
+  async updateInquiryStatus(inquiryId: string, status: SalesInquiryStatus, adminNotes?: string) {
+    const inquiry = await this.salesModel.findByIdAndUpdate(
+      inquiryId,
+      { status, ...(adminNotes ? { adminNotes } : {}) },
+      { new: true },
+    );
+    if (!inquiry) throw new NotFoundException('Inquiry not found');
+    return inquiry;
   }
 }

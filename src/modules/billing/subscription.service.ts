@@ -24,18 +24,18 @@ export const SYSTEM_PLANS: Record<string, Partial<Plan>> = {
     analyticsEnabled: false, aiEnabled: false,
   },
   starter: {
-    name: 'Starter', priceMonthly: 249900, eventsPerMonth: 50_000,
+    name: 'Starter', priceMonthly: 99900, eventsPerMonth: 50_000,
     endpointsLimit: 20, retentionDays: 30, projectsLimit: 3, teamMembersLimit: 5,
     analyticsEnabled: true, aiEnabled: false,
   },
   pro: {
-    name: 'Pro', priceMonthly: 829900, eventsPerMonth: 500_000,
+    name: 'Pro', priceMonthly: 299900, eventsPerMonth: 500_000,
     endpointsLimit: 100, retentionDays: 90, projectsLimit: 10, teamMembersLimit: 20,
     analyticsEnabled: true, aiEnabled: true, slaMonitoringEnabled: true,
     priorityQueueEnabled: true, eventCatalogEnabled: true,
   },
   enterprise: {
-    name: 'Enterprise', priceMonthly: 3329900, eventsPerMonth: -1,
+    name: 'Enterprise', priceMonthly: 0, eventsPerMonth: -1,
     endpointsLimit: -1, retentionDays: 365, projectsLimit: -1, teamMembersLimit: -1,
     analyticsEnabled: true, aiEnabled: true, slaMonitoringEnabled: true,
     resellerEnabled: true, mtlsEnabled: true, customDomainsEnabled: true,

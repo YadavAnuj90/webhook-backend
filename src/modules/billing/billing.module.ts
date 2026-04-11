@@ -6,7 +6,8 @@ import { Subscription, SubscriptionSchema }             from './schemas/subscrip
 import { Invoice, InvoiceSchema }                       from './schemas/invoice.schema';
 import { CreditPackage, CreditPackageSchema,
          CreditBalance, CreditBalanceSchema,
-         CreditTransaction, CreditTransactionSchema }   from './schemas/credit-ledger.schema';
+         CreditTransaction, CreditTransactionSchema,
+         SalesInquiry, SalesInquirySchema }              from './schemas/credit-ledger.schema';
 import { Reseller, ResellerSchema,
          ResellerCustomer, ResellerCustomerSchema }     from './schemas/reseller.schema';
 
@@ -29,6 +30,7 @@ import { AuditModule }              from '../audit/audit.module';
       { name: CreditPackage.name,      schema: CreditPackageSchema },
       { name: CreditBalance.name,      schema: CreditBalanceSchema },
       { name: CreditTransaction.name,  schema: CreditTransactionSchema },
+      { name: SalesInquiry.name,       schema: SalesInquirySchema },
       { name: Reseller.name,           schema: ResellerSchema },
       { name: ResellerCustomer.name,   schema: ResellerCustomerSchema },
       { name: User.name,               schema: UserSchema },
