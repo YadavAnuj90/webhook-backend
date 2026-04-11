@@ -4,10 +4,10 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum MemberRole {
-  OWNER  = 'owner',
-  ADMIN  = 'admin',
-  MEMBER = 'member',
-  VIEWER = 'viewer',
+  OWNER     = 'owner',
+  ADMIN     = 'admin',
+  DEVELOPER = 'developer',
+  VIEWER    = 'viewer',
 }
 
 export class CreateWorkspaceDto {
@@ -29,7 +29,7 @@ export class InviteMemberDto {
   @IsEmail()
   email: string;
 
-  @ApiProperty({ enum: MemberRole, example: MemberRole.MEMBER })
+  @ApiProperty({ enum: MemberRole, example: MemberRole.DEVELOPER })
   @IsEnum(MemberRole)
   role: MemberRole;
 }

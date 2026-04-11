@@ -38,9 +38,11 @@ import { DeduplicationModule } from './modules/deduplication/deduplication.modul
 import { SlaModule } from './modules/sla/sla.module';
 import { AiModule } from './modules/ai/ai.module';
 import { BillingModule } from './modules/billing/billing.module';
+import { CareersModule } from './modules/careers/careers.module';
 import { RealtimeModule } from './modules/realtime/realtime.module';
 import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
+import { ProjectAccessModule } from './common/guards/project-access.module';
 
 @Module({
   imports: [
@@ -117,6 +119,9 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
     // ─── Billing: Trial, Subscriptions, Credits, Reseller ────────────────────
     BillingModule,
 
+    // Careers: public job listings + admin management
+    CareersModule,
+
     // Real-time WebSocket gateway
     RealtimeModule,
 
@@ -125,6 +130,9 @@ import { PermissionsModule } from './modules/permissions/permissions.module';
 
     // Fine-grained RBAC permissions
     PermissionsModule,
+
+    // Resource-scoped project access guard (global)
+    ProjectAccessModule,
   ],
   providers: [
     // ── Global rate-limit guard (applies to every route; skip with @SkipThrottle()) ──

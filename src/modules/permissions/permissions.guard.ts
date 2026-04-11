@@ -1,6 +1,6 @@
 import {
   Injectable, CanActivate, ExecutionContext,
-  SetMetadata, ForbiddenException,
+  SetMetadata, ForbiddenException, Logger,
 } from '@nestjs/common';
 import { Reflector } from '@nestjs/core';
 import { Resource, Action } from './permissions.constants';
@@ -23,15 +23,19 @@ export const RequirePermission = (resource: Resource, action: Action) =>
 /**
  * PermissionGuard — checks fine-grained RBAC permissions.
  *
- * How role resolution works:
- * 1. Check request.projectRole (set by project-access middleware/guard)
- * 2. Fall back to user.role (global role from JWT)
- * 3. If no permission metadata on route → allow (backward compat)
+ * Role resolution order (resource-scoped RBAC):
+ * 1. Super admin (user.role === 'super_admin') → ALWAYS ALLOWED (god-mode)
+ * 2. request.projectRole (set by ProjectAccessGuard from project.members)
+ * 3. request.workspaceRole (set by ProjectAccessGuard from workspace.members)
+ * 4. Deny if no role resolved
  *
+ * IMPORTANT: Super admin bypass is logged — god-mode ≠ invisible mode.
  * This guard must be used AFTER AuthGuard('jwt') in the guard chain.
  */
 @Injectable()
 export class PermissionGuard implements CanActivate {
+  private readonly logger = new Logger(PermissionGuard.name);
+
   constructor(
     private reflector: Reflector,
     private permissionsService: PermissionsService,
@@ -53,8 +57,26 @@ export class PermissionGuard implements CanActivate {
     const user = request.user;
     if (!user) throw new ForbiddenException('Authentication required');
 
-    // Resolve role: project-level role takes precedence over global role
-    const role = request.projectRole || request.memberRole || user.role;
+    // ── SUPER ADMIN GOD-MODE BYPASS ──────────────────────────────────────────
+    // Super admin has unrestricted access to ALL resources across ALL tenants.
+    // Actions are still logged via LoggingInterceptor — god-mode ≠ invisible.
+    if (user.role === 'super_admin') {
+      this.logger.verbose(
+        `[GOD-MODE] super_admin ${user.email || user.id} → ${requirement.resource}:${requirement.action}`,
+      );
+      return true;
+    }
+
+    // ── Resource-scoped role resolution ──────────────────────────────────────
+    // Priority: per-project role > per-workspace role > deny
+    // Global user.role is NOT used for resource access (no global admin/developer)
+    const role = request.projectRole || request.workspaceRole;
+
+    if (!role) {
+      throw new ForbiddenException(
+        'No access to this resource. You must be a member of the project or workspace.',
+      );
+    }
 
     const allowed = await this.permissionsService.hasPermission(
       role,
@@ -65,7 +87,7 @@ export class PermissionGuard implements CanActivate {
     if (!allowed) {
       throw new ForbiddenException(
         `You don't have permission to ${requirement.action} ${requirement.resource}. ` +
-        `Required: ${requirement.resource}:${requirement.action}`,
+        `Your role "${role}" does not include ${requirement.resource}:${requirement.action}.`,
       );
     }
 

@@ -34,6 +34,24 @@ export enum AuditAction {
   TWO_FACTOR_DISABLED              = 'auth.2fa_disabled',
   TWO_FACTOR_RECOVERY_REGENERATED  = 'auth.2fa_recovery_regenerated',
   TWO_FACTOR_LOGIN                 = 'auth.2fa_login',
+
+  // ── Workspace / Team RBAC ──────────────────────────────────────────────
+  WORKSPACE_CREATED       = 'workspace.created',
+  WORKSPACE_UPDATED       = 'workspace.updated',
+  WORKSPACE_DELETED       = 'workspace.deleted',
+  MEMBER_INVITED          = 'team.member_invited',
+  MEMBER_JOINED           = 'team.member_joined',
+  MEMBER_REMOVED          = 'team.member_removed',
+  MEMBER_ROLE_CHANGED     = 'team.member_role_changed',
+  INVITE_REVOKED          = 'team.invite_revoked',
+
+  // ── Project / Application RBAC ─────────────────────────────────────────
+  PROJECT_MEMBER_ADDED    = 'project.member_added',
+  PROJECT_MEMBER_REMOVED  = 'project.member_removed',
+  PROJECT_ROLE_CHANGED    = 'project.member_role_changed',
+
+  // ── Super Admin God-Mode Actions ───────────────────────────────────────
+  SUPER_ADMIN_ACCESS      = 'admin.god_mode_access',
 }
 
 /**

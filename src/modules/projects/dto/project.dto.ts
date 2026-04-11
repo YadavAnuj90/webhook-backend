@@ -21,12 +21,13 @@ export class CreateProjectDto {
 export class UpdateProjectDto extends PartialType(CreateProjectDto) {}
 
 export class AddMemberDto {
-  @ApiProperty({ example: 'member@example.com' })
-  @IsEmail()
-  email: string;
-
-  @ApiProperty({ enum: ['admin', 'member', 'viewer'], example: 'member' })
+  @ApiProperty({ description: 'User ID to add as member' })
   @IsString()
-  @IsIn(['admin', 'member', 'viewer'])
-  role: 'admin' | 'member' | 'viewer';
+  @IsNotEmpty()
+  userId: string;
+
+  @ApiProperty({ enum: ['admin', 'developer', 'viewer'], example: 'developer' })
+  @IsString()
+  @IsIn(['admin', 'developer', 'viewer'])
+  role: 'admin' | 'developer' | 'viewer';
 }

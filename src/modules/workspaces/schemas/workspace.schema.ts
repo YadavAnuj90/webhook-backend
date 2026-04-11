@@ -71,6 +71,8 @@ export class WorkspaceInvite {
   @Prop({ type: String, required: true, lowercase: true, trim: true }) email: string;
   @Prop({ enum: MemberRole, default: MemberRole.DEVELOPER }) role: MemberRole;
   @Prop({ required: true, unique: true }) token: string;
+  // 6-digit OTP for secondary invite verification (share via SMS, chat, etc.)
+  @Prop({ type: String, default: null }) otp: string | null;
   @Prop({ type: Types.ObjectId, ref: 'User' }) invitedBy: Types.ObjectId;
   @Prop({ default: false }) accepted: boolean;
   @Prop({ default: () => new Date(Date.now() + 7 * 24 * 60 * 60 * 1000) }) expiresAt: Date;

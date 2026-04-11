@@ -12,6 +12,7 @@ import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston';
 import helmet from 'helmet';
 import * as express from 'express';
 import { setupBullBoard } from './common/bull-board/bull-board.setup';
+import { join } from 'path';
 
 // ── Compression (npm install compression @types/compression) ─────────────────
 // eslint-disable-next-line @typescript-eslint/no-var-requires
@@ -69,6 +70,9 @@ async function bootstrap() {
   // ── Body size limit: 1 MB max (raw body still available for webhook HMAC) ──
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
+
+  // ── Static file serving (resume uploads) ─────────────────────────────────
+  app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
   // ── Response compression ──────────────────────────────────────────────────
   if (compression) app.use(compression());

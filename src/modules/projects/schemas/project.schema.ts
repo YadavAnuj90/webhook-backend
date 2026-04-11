@@ -24,12 +24,17 @@ export class Project extends Document {
   @Prop({ type: String, trim: true }) description: string;
   @Prop({ required: true })             ownerId:     string;
 
+  // ── Workspace link — ties this project (Application) to a Workspace (Company) ──
+  // When set, workspace members inherit access to this project.
+  // Per-project member roles override workspace-level roles.
+  @Prop({ type: String, default: null }) workspaceId: string | null;
+
   @Prop({
-    type: [{ userId: String, role: String }],
+    type: [{ userId: String, role: { type: String, enum: ['owner', 'admin', 'developer', 'viewer'] } }],
     default: [],
     _id: false,
   })
-  members: { userId: string; role: 'admin' | 'member' | 'viewer' }[];
+  members: { userId: string; role: 'owner' | 'admin' | 'developer' | 'viewer' }[];
 
   @Prop({ default: true }) isActive: boolean;
 
@@ -64,6 +69,12 @@ ProjectSchema.index(
 
 // Soft-delete admin view
 ProjectSchema.index({ ownerId: 1, deletedAt: 1 }, { name: 'idx_owner_deleted' });
+
+// Workspace link: "which projects belong to this workspace?"
+ProjectSchema.index(
+  { workspaceId: 1, deletedAt: 1 },
+  { sparse: true, name: 'idx_workspace_projects' },
+);
 
 // Usage reset job: find projects due for monthly reset
 ProjectSchema.index(
