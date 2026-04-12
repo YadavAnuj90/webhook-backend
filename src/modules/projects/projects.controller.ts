@@ -33,6 +33,13 @@ export class ProjectsController {
     return this.projectsService.findAll(req.user.id, req.user.role);
   }
 
+  @Get('my-default')
+  @ApiOperation({ summary: 'Get the user\'s default project (first owned/member project, auto-creates if none)' })
+  @ApiResponse({ status: 200, description: 'Default project details' })
+  async myDefault(@Request() req: any) {
+    return this.projectsService.resolveDefault(req.user.id, req.user.role);
+  }
+
   @Get(':id')
   @ApiOperation({ summary: 'Get project details including members and quota usage' })
   @ApiParam({ name: 'id', description: 'Project ID', type: String })

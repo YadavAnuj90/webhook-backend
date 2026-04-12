@@ -182,6 +182,49 @@ export class ProjectsService {
     return { success: true };
   }
 
+  /**
+   * Resolve the user's default project (first owned/member project).
+   * Auto-creates a "Default Project" if none exists (seamless onboarding).
+   */
+  async resolveDefault(userId: string, userRole?: string): Promise<Project> {
+    // Super admin: get any first project
+    if (userRole === 'super_admin') {
+      let project = await this.projectModel
+        .findOne({ deletedAt: null })
+        .sort({ createdAt: 1 })
+        .exec();
+      if (!project) {
+        project = await new this.projectModel({
+          name: 'Default Project',
+          description: 'Auto-created default project',
+          ownerId: userId,
+        }).save();
+        this.logger.log(`Auto-created default project for super_admin ${userId}`);
+      }
+      return project;
+    }
+
+    // Regular user: find their first project
+    let project = await this.projectModel
+      .findOne({
+        $or: [{ ownerId: userId }, { 'members.userId': userId }],
+        deletedAt: null,
+      })
+      .sort({ createdAt: 1 })
+      .exec();
+
+    if (!project) {
+      project = await new this.projectModel({
+        name: 'Default Project',
+        description: 'Auto-created default project',
+        ownerId: userId,
+      }).save();
+      this.logger.log(`Auto-created default project for user ${userId}`);
+    }
+
+    return project;
+  }
+
   async incrementEventCount(projectId: string): Promise<void> {
     await this.projectModel.findByIdAndUpdate(projectId, {
       $inc: { currentMonthEvents: 1 },
