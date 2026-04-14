@@ -15,12 +15,10 @@ import { Subscription, SubscriptionStatus } from './schemas/subscription.schema'
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const Razorpay = require('razorpay');
 
-/** Credits consumed per delivery event */
 export const CREDITS_PER_DELIVERY = 1;
-/** Credits consumed per retry attempt */
+
 export const CREDITS_PER_RETRY = 1;
 
 @Injectable()
@@ -44,8 +42,6 @@ export class CreditsService {
     });
   }
 
-  // ─── Credit Packages ────────────────────────────────────────────────────────
-
   async getPackages() {
     return this.pkgModel.find({ isActive: true }).sort({ sortOrder: 1 }).lean();
   }
@@ -61,8 +57,6 @@ export class CreditsService {
     ]);
     this.logger.log('Seeded default credit packages');
   }
-
-  // ─── Balance ────────────────────────────────────────────────────────────────
 
   async getBalance(userId: string): Promise<CreditBalance> {
     let bal = await this.balModel.findOne({ userId });
@@ -80,8 +74,6 @@ export class CreditsService {
       .limit(limit)
       .lean();
   }
-
-  // ─── Purchase flow ──────────────────────────────────────────────────────────
 
   async createPurchaseOrder(userId: string, packageId: string, ip: string) {
     const pkg = await this.pkgModel.findById(packageId);
@@ -127,7 +119,6 @@ export class CreditsService {
       invoiceId: null,
     });
 
-    // Generate invoice
     const invoiceNumber = await this.nextInvoiceNumber();
     const tax = Math.round(pkg.price * 0.18);
     await this.invoiceModel.create({
@@ -152,7 +143,6 @@ export class CreditsService {
       dueDate: new Date(),
     });
 
-    // If user was on TRIAL_EXPIRED, upgrade to CREDIT_ONLY status
     await this.subModel.updateOne(
       { userId, status: { $in: [SubscriptionStatus.TRIAL_EXPIRED, SubscriptionStatus.CANCELLED] } },
       { $set: { status: SubscriptionStatus.CREDIT_ONLY } },
@@ -169,8 +159,6 @@ export class CreditsService {
       invoiceNumber,
     };
   }
-
-  // ─── Deduct credits (called by DeliveryService) ──────────────────────────────
 
   async deductForDelivery(
     userId: string,
@@ -200,15 +188,12 @@ export class CreditsService {
       deliveryLogId: opts.deliveryLogId || null,
     });
 
-    // Low balance alert
     if (updated.balance <= (updated.lowBalanceAlertAt ?? 1000) && updated.balance >= 0) {
       this.logger.warn(`Low credit balance for user ${userId}: ${updated.balance} remaining`);
     }
 
     return { ok: true, balance: updated.balance };
   }
-
-  // ─── Admin/manual top-up ─────────────────────────────────────────────────────
 
   async adminAdjust(userId: string, amount: number, description: string, adminId: string) {
     const newBal = await this.topUp(
@@ -217,8 +202,6 @@ export class CreditsService {
     );
     return { message: `Adjusted ${amount} credits`, balance: newBal.balance };
   }
-
-  // ─── Internal helpers ────────────────────────────────────────────────────────
 
   async topUp(
     userId: string,
@@ -252,14 +235,12 @@ export class CreditsService {
     return `INV-${new Date().getFullYear()}-${pad}`;
   }
 
-  // ─── Auto top-up check ───────────────────────────────────────────────────────
   async checkAutoTopUp(userId: string) {
     const bal = await this.balModel.findOne({ userId });
     if (!bal?.autoTopUpEnabled || !bal.autoTopUpPackageId || !bal.autoTopUpThreshold) return;
     if (bal.balance <= bal.autoTopUpThreshold) {
       this.logger.log(`Auto top-up triggered for ${userId}, threshold=${bal.autoTopUpThreshold}`);
-      // In production, this would trigger a Razorpay auto-charge via saved card
-      // For now we log the intent — integration point for saved payment methods
+
     }
   }
 
@@ -277,14 +258,12 @@ export class CreditsService {
     );
   }
 
-  // ─── Sales Inquiry (Enterprise Contact Sales) ──────────────────────────────
-
   async submitSalesInquiry(userId: string, dto: {
     businessEmail: string; companyName: string; companyUrl?: string;
     fullName?: string; phone?: string; teamSize?: string;
     useCase?: string; monthlyEvents?: string; packageId?: string;
   }) {
-    // Prevent duplicate pending inquiries from same user
+
     const existing = await this.salesModel.findOne({
       userId,
       status: SalesInquiryStatus.PENDING,
@@ -324,14 +303,12 @@ export class CreditsService {
     return this.salesModel.find({ userId }).sort({ createdAt: -1 }).lean();
   }
 
-  /** Admin: list all sales inquiries */
   async getAllInquiries(status?: string, limit = 50, skip = 0) {
     const filter: any = {};
     if (status) filter.status = status;
     return this.salesModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit).lean();
   }
 
-  /** Admin: update inquiry status */
   async updateInquiryStatus(inquiryId: string, status: SalesInquiryStatus, adminNotes?: string) {
     const inquiry = await this.salesModel.findByIdAndUpdate(
       inquiryId,

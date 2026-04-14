@@ -1,4 +1,4 @@
-// ─── Service ─────────────────────────────────────────────────────────────────
+
 import {
   Injectable, NotFoundException, ForbiddenException, Logger,
 } from '@nestjs/common';
@@ -46,18 +46,16 @@ export class ProjectsService {
   }
 
   async findAll(userId: string, userRole?: string): Promise<Project[]> {
-    // Super admin sees ALL projects across all tenants
+
     if (userRole === 'super_admin') {
       return this.projectModel.find({ deletedAt: null }).sort({ createdAt: -1 }).exec();
     }
 
-    // Regular users: owned + member + workspace-inherited
     const ownedOrMember = await this.projectModel.find({
       $or: [{ ownerId: userId }, { 'members.userId': userId }],
       deletedAt: null,
     }).exec();
 
-    // Also find projects linked to workspaces where user is a member
     const workspaces = await this.workspaceModel
       .find({ 'members.userId': userId, isActive: true })
       .select('_id')
@@ -68,8 +66,8 @@ export class ProjectsService {
       const wsProjects = await this.projectModel.find({
         workspaceId: { $in: wsIds },
         deletedAt: null,
-        ownerId: { $ne: userId },         // avoid duplicates
-        'members.userId': { $ne: userId }, // avoid duplicates
+        ownerId: { $ne: userId },
+        'members.userId': { $ne: userId },
       }).exec();
       return [...ownedOrMember, ...wsProjects];
     }
@@ -81,7 +79,6 @@ export class ProjectsService {
     const project = await this.projectModel.findOne({ _id: id, deletedAt: null });
     if (!project) throw new NotFoundException('Project not found');
 
-    // Super admin bypasses all access checks
     if (userRole === 'super_admin') return project;
 
     await this.checkAccess(project, userId);
@@ -97,7 +94,6 @@ export class ProjectsService {
     const project = await this.projectModel.findOne({ _id: id, deletedAt: null });
     if (!project) throw new NotFoundException('Project not found');
 
-    // Super admin can delete any project
     if (userRole === 'super_admin') {
       await this.projectModel.findByIdAndUpdate(id, { deletedAt: new Date() });
       return;
@@ -116,7 +112,6 @@ export class ProjectsService {
   ) {
     const project = await this.findOne(projectId, requesterId, requesterRole);
 
-    // Only owner/admin (or super_admin) can add members
     if (requesterRole !== 'super_admin') {
       const isOwner = project.ownerId === requesterId;
       const isAdmin = project.members.some(
@@ -182,12 +177,8 @@ export class ProjectsService {
     return { success: true };
   }
 
-  /**
-   * Resolve the user's default project (first owned/member project).
-   * Auto-creates a "Default Project" if none exists (seamless onboarding).
-   */
   async resolveDefault(userId: string, userRole?: string): Promise<Project> {
-    // Super admin: get any first project
+
     if (userRole === 'super_admin') {
       let project = await this.projectModel
         .findOne({ deletedAt: null })
@@ -204,7 +195,6 @@ export class ProjectsService {
       return project;
     }
 
-    // Regular user: find their first project
     let project = await this.projectModel
       .findOne({
         $or: [{ ownerId: userId }, { 'members.userId': userId }],
@@ -237,10 +227,6 @@ export class ProjectsService {
     return project.currentMonthEvents < project.monthlyEventLimit;
   }
 
-  /**
-   * Resolve the user's effective role in a project.
-   * Used by ProjectAccessGuard and other internal services.
-   */
   async resolveRole(projectId: string, userId: string): Promise<string | null> {
     const project: any = await this.projectModel
       .findOne({ _id: projectId, deletedAt: null })
@@ -248,16 +234,13 @@ export class ProjectsService {
       .lean();
     if (!project) return null;
 
-    // Owner
     if (project.ownerId === userId || project.ownerId?.toString() === userId) return 'owner';
 
-    // Direct member
     const member = (project.members || []).find(
       (m: any) => m.userId === userId || m.userId?.toString() === userId,
     );
     if (member) return member.role;
 
-    // Workspace-inherited
     if (project.workspaceId) {
       const ws: any = await this.workspaceModel
         .findOne({ _id: project.workspaceId, isActive: true })
@@ -274,21 +257,18 @@ export class ProjectsService {
     return null;
   }
 
-  // ── Private ──────────────────────────────────────────────────────────────────
-
   private async checkAccess(project: Project, userId: string): Promise<void> {
     const isOwner = project.ownerId === userId;
     const isMember = project.members.some(m => m.userId === userId);
 
     if (isOwner || isMember) return;
 
-    // Check workspace-inherited access
     if (project.workspaceId) {
       const ws = await this.workspaceModel
         .findOne({ _id: project.workspaceId, isActive: true, 'members.userId': userId })
         .select('_id')
         .lean();
-      if (ws) return; // workspace member → access granted
+      if (ws) return;
     }
 
     throw new ForbiddenException('No access to this project');

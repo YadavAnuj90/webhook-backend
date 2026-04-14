@@ -19,6 +19,7 @@ import { ProjectsService } from '../projects/projects.service';
 import { WebhookEvent, EventStatus } from '../events/schemas/event.schema';
 import { Endpoint, EndpointStatus } from '../endpoints/schemas/endpoint.schema';
 import { WEBHOOK_QUEUE } from '../../queue/queue.constants';
+import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
 
 class SendWebhookDto {
   @ApiProperty({ example: 'payment.success' }) @IsString() eventType: string;
@@ -52,6 +53,7 @@ export class WebhooksController {
     @Param('endpointId') endpointId: string,
     @Body() dto: SendWebhookDto,
     @Request() req: any,
+    @IdempotencyKey() headerKey?: string,
   ) {
     const withinLimit = await this.projectsService.checkEventLimit(projectId);
     if (!withinLimit) return { error: 'Monthly event limit reached' };
@@ -61,16 +63,18 @@ export class WebhooksController {
       return { error: 'Endpoint not active' };
     }
 
-    const idempotencyKey = dto.idempotencyKey || uuidv4();
+    const idempotencyKey = dto.idempotencyKey || headerKey || uuidv4();
     const existing = await this.eventModel.findOne({ idempotencyKey, endpointId });
     if (existing) throw new ConflictException(`Duplicate idempotency key: ${idempotencyKey}`);
 
+    const requestId = req?.requestId || (req?.headers?.['x-request-id'] as string) || null;
     const event = await this.eventModel.create({
       projectId, endpointId, eventType: dto.eventType,
       payload: dto.payload, idempotencyKey, status: EventStatus.PENDING,
+      requestId,
     });
 
-    await this.webhookQueue.add({ eventId: event.id }, { attempts: 1 });
+    await this.webhookQueue.add({ eventId: event.id, requestId }, { attempts: 1 });
     await this.projectsService.incrementEventCount(projectId);
     return { message: 'Queued', eventId: event.id, idempotencyKey };
   }
@@ -83,15 +87,20 @@ export class WebhooksController {
   async broadcast(
     @Param('projectId') projectId: string,
     @Body() dto: SendWebhookDto,
+    @Request() req: any,
+    @IdempotencyKey() headerKey?: string,
   ) {
     const endpoints = await this.endpointModel.find({ projectId, status: EndpointStatus.ACTIVE });
+    const rootKey = dto.idempotencyKey || headerKey;
+    const requestId = req?.requestId || (req?.headers?.['x-request-id'] as string) || null;
     const results = await Promise.all(endpoints.map(async ep => {
-      const idempotencyKey = dto.idempotencyKey ? `${dto.idempotencyKey}-${ep.id}` : uuidv4();
+      const idempotencyKey = rootKey ? `${rootKey}-${ep.id}` : uuidv4();
       const event = await this.eventModel.create({
         projectId, endpointId: ep.id, eventType: dto.eventType,
         payload: dto.payload, idempotencyKey, status: EventStatus.PENDING,
+        requestId,
       });
-      await this.webhookQueue.add({ eventId: event.id }, { attempts: 1 });
+      await this.webhookQueue.add({ eventId: event.id, requestId }, { attempts: 1 });
       return { endpointId: ep.id, eventId: event.id };
     }));
     return { dispatched: results.length, results };

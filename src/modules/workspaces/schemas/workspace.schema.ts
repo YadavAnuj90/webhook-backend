@@ -18,16 +18,6 @@ export class WorkspaceMember {
 }
 export const WorkspaceMemberSchema = SchemaFactory.createForClass(WorkspaceMember);
 
-/**
- * Workspace — multi-tenant root entity.
- *
- * DBA decisions:
- * - slug unique+sparse: optional but must be unique when set
- * - members array: indexed on members.userId for O(1) membership check
- * - Members added via $push (atomic, no full-document replace)
- * - Members removed via $pull: { $pull: { members: { userId: id } } }
- * - Role changes via $set: { $set: { 'members.$.role': newRole } } with positional $
- */
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -46,20 +36,12 @@ export class Workspace {
 }
 export const WorkspaceSchema = SchemaFactory.createForClass(Workspace);
 
-// Slug lookup (e.g. /ws/my-team)
 WorkspaceSchema.index({ slug: 1 }, { unique: true, sparse: true, name: 'uq_slug' });
-// Owner's workspace list
+
 WorkspaceSchema.index({ ownerId: 1, isActive: 1 }, { name: 'idx_owner_active' });
-// "Which workspaces does user X belong to?" — multikey on embedded array
+
 WorkspaceSchema.index({ 'members.userId': 1 }, { name: 'idx_member_lookup' });
 
-// ── WorkspaceInvite ────────────────────────────────────────────────────────────
-/**
- * DBA decisions:
- * - token unique: one-click accept link requires O(1) lookup
- * - TTL on expiresAt: invites auto-expire — no cron needed
- * - Partial index on accepted:false: only pending invites in active index
- */
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -71,7 +53,7 @@ export class WorkspaceInvite {
   @Prop({ type: String, required: true, lowercase: true, trim: true }) email: string;
   @Prop({ enum: MemberRole, default: MemberRole.DEVELOPER }) role: MemberRole;
   @Prop({ required: true, unique: true }) token: string;
-  // 6-digit OTP for secondary invite verification (share via SMS, chat, etc.)
+
   @Prop({ type: String, default: null }) otp: string | null;
   @Prop({ type: Types.ObjectId, ref: 'User' }) invitedBy: Types.ObjectId;
   @Prop({ default: false }) accepted: boolean;
@@ -79,9 +61,6 @@ export class WorkspaceInvite {
 }
 export const WorkspaceInviteSchema = SchemaFactory.createForClass(WorkspaceInvite);
 
-// token unique from @Prop(unique:true)
-
-// "Has this email already been invited to this workspace?"
 WorkspaceInviteSchema.index(
   { workspaceId: 1, email: 1 },
   {
@@ -90,13 +69,11 @@ WorkspaceInviteSchema.index(
   },
 );
 
-// Accept invite by token — only pending ones
 WorkspaceInviteSchema.index(
   { token: 1 },
   { partialFilterExpression: { accepted: false }, name: 'idx_token_pending_partial' },
 );
 
-// TTL: auto-expire invites after 7 days
 WorkspaceInviteSchema.index(
   { expiresAt: 1 },
   { expireAfterSeconds: 0, name: 'ttl_invite_expiry' },

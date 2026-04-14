@@ -16,8 +16,6 @@ import { diskStorage } from 'multer';
 import { extname, join } from 'path';
 import { existsSync, mkdirSync } from 'fs';
 
-// ─── Resume upload config ────────────────────────────────────────────────────
-
 const UPLOAD_DIR = join(process.cwd(), 'uploads', 'resumes');
 if (!existsSync(UPLOAD_DIR)) mkdirSync(UPLOAD_DIR, { recursive: true });
 
@@ -34,10 +32,6 @@ const resumeFilter = (_req: any, file: any, cb: any) => {
   if (allowed.includes(extname(file.originalname).toLowerCase())) cb(null, true);
   else cb(new Error('Only PDF and Word documents are allowed'), false);
 };
-
-// ═════════════════════════════════════════════════════════════════════════════
-//  PUBLIC ENDPOINTS — no auth required
-// ═════════════════════════════════════════════════════════════════════════════
 
 @ApiTags('Careers (Public)')
 @Controller('careers')
@@ -77,7 +71,7 @@ export class CareersPublicController {
   @UseInterceptors(FileInterceptor('resume', {
     storage: resumeStorage,
     fileFilter: resumeFilter,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5 MB
+    limits: { fileSize: 5 * 1024 * 1024 },
   }))
   @ApiConsumes('multipart/form-data')
   @ApiOperation({ summary: 'Submit a job application' })
@@ -85,7 +79,7 @@ export class CareersPublicController {
   @ApiResponse({ status: 409, description: 'Already applied for this position' })
   async apply(
     @Body() body: any,
-    @UploadedFile() resume?: any /* Express.Multer.File */,
+    @UploadedFile() resume?: any ,
   ) {
     return this.svc.submitApplication({
       ...body,
@@ -95,10 +89,6 @@ export class CareersPublicController {
   }
 }
 
-// ═════════════════════════════════════════════════════════════════════════════
-//  ADMIN ENDPOINTS — super_admin only
-// ═════════════════════════════════════════════════════════════════════════════
-
 @ApiTags('Careers (Admin)')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), RolesGuard)
@@ -107,15 +97,11 @@ export class CareersPublicController {
 export class CareersAdminController {
   constructor(private readonly svc: CareersService) {}
 
-  // ─── Stats ─────────────────────────────────────────────────────────────────
-
   @Get('stats')
   @ApiOperation({ summary: 'Careers dashboard stats' })
   async getStats() {
     return this.svc.getStats();
   }
-
-  // ─── Jobs CRUD ─────────────────────────────────────────────────────────────
 
   @Get('jobs')
   @ApiOperation({ summary: 'List all jobs (any status)' })
@@ -156,8 +142,6 @@ export class CareersAdminController {
   async deleteJob(@Param('id') id: string) {
     return this.svc.deleteJob(id);
   }
-
-  // ─── Applications ──────────────────────────────────────────────────────────
 
   @Get('applications')
   @ApiOperation({ summary: 'List all applications with filters' })

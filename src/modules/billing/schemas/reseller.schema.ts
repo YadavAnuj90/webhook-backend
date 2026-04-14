@@ -11,12 +11,12 @@ export class Reseller extends Document {
 
   @Prop({ default: 20 })   defaultMarkupPct:         number;
   @Prop({ default: 100 })  pricePerThousandEvents:   number;
-  @Prop({ default: 0 })    totalRevenueCollected:    number;  // $inc atomically
-  @Prop({ default: 0 })    totalCustomers:           number;  // $inc atomically
+  @Prop({ default: 0 })    totalRevenueCollected:    number;
+  @Prop({ default: 0 })    totalCustomers:           number;
   @Prop({ default: true }) isActive: boolean;
 }
 export const ResellerSchema = SchemaFactory.createForClass(Reseller);
-// userId unique from @Prop
+
 ResellerSchema.index({ isActive: 1 }, { name: 'idx_active' });
 
 @Schema({ timestamps: true, versionKey: false })
@@ -27,7 +27,6 @@ export class ResellerCustomer extends Document {
   @Prop({ default: 0 })   markupPct:               number;
   @Prop({ default: 100 }) pricePerThousandEvents:  number;
 
-  // $inc atomically on each delivery
   @Prop({ default: 0 })                  currentMonthEvents: number;
   @Prop({ type: Date, default: null })   billingCycleStart:  Date | null;
   @Prop({ type: Date, default: null })   billingCycleEnd:    Date | null;
@@ -44,7 +43,7 @@ ResellerCustomerSchema.index(
   { resellerId: 1, customerId: 1 },
   { unique: true, name: 'uq_reseller_customer' },
 );
-// Billing cycle expiry cron
+
 ResellerCustomerSchema.index(
   { billingCycleEnd: 1 },
   { sparse: true, name: 'idx_cycle_end' },

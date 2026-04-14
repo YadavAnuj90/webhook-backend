@@ -1,15 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document, Types } from 'mongoose';
 
-/**
- * Transformation — applied in order on every delivery to an endpoint.
- *
- * DBA decisions:
- * - Compound index { endpointId, isActive, order } covers the hot query:
- *     find({ endpointId, isActive:true }).sort({ order:1 })
- *   This is a fully covered index — no collection scan needed.
- * - Partial index variant for user management page (userId, isActive)
- */
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -29,12 +20,11 @@ export class Transformation {
   type: string;
   @Prop({ type: Object }) config: Record<string, any>;
   @Prop({ default: true }) isActive: boolean;
-  @Prop({ default: 0 })    order:    number;   // execution order — sort ascending
+  @Prop({ default: 0 })    order:    number;
 }
 export const TransformationSchema = SchemaFactory.createForClass(Transformation);
 export type TransformationDocument = Transformation & Document;
 
-// HOT PATH: get ordered active transformations for an endpoint
 TransformationSchema.index(
   { endpointId: 1, isActive: 1, order: 1 },
   {
@@ -43,7 +33,6 @@ TransformationSchema.index(
   },
 );
 
-// User's transformation management page
 TransformationSchema.index(
   { userId: 1, isActive: 1 },
   { name: 'idx_user_active' },

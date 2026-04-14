@@ -36,8 +36,6 @@ export class BillingEmailService {
     }
   }
 
-  // ─── Email Verification ──────────────────────────────────────────────────
-
   async sendVerificationEmail(to: string, firstName: string, token: string) {
     const url = `${this.config.get('FRONTEND_URL') || 'http://localhost:3001'}/auth/verify-email?token=${token}`;
     await this.send(to, 'Verify your WebhookOS email', `
@@ -52,8 +50,6 @@ export class BillingEmailService {
     `);
   }
 
-  // ─── Password Reset ──────────────────────────────────────────────────────
-
   async sendPasswordReset(to: string, firstName: string, token: string) {
     const url = `${this.config.get('FRONTEND_URL') || 'http://localhost:3001'}/auth/reset-password?token=${token}`;
     await this.send(to, 'Reset your WebhookOS password', `
@@ -67,8 +63,6 @@ export class BillingEmailService {
       </div>
     `);
   }
-
-  // ─── Trial Emails ────────────────────────────────────────────────────────
 
   async sendTrialWarning(to: string, firstName: string, daysLeft: number) {
     const upgradeUrl = `${this.config.get('FRONTEND_URL') || 'http://localhost:3001'}/billing`;
@@ -99,8 +93,6 @@ export class BillingEmailService {
     `);
   }
 
-  // ─── Invoice Email ───────────────────────────────────────────────────────
-
   async sendInvoice(to: string, firstName: string, invoice: {
     invoiceNumber: string; total: number; currency: string;
     periodStart: Date; periodEnd: Date; type: string;
@@ -124,8 +116,6 @@ export class BillingEmailService {
       </div>
     `);
   }
-
-  // ─── Payment Failed ──────────────────────────────────────────────────────
 
   async sendPaymentFailed(to: string, firstName: string) {
     const billingUrl = `${this.config.get('FRONTEND_URL') || 'http://localhost:3001'}/billing`;

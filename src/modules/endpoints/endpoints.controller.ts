@@ -13,12 +13,6 @@ import { ProjectAccessGuard } from '../../common/guards/project-access.guard';
 import { PermissionGuard, RequirePermission } from '../permissions/permissions.guard';
 import { Resource, Action } from '../permissions/permissions.constants';
 
-/**
- * EndpointsController — resource-scoped RBAC via ProjectAccessGuard.
- *
- * Guard chain: JWT → ProjectAccessGuard (resolves role) → PermissionGuard (checks permission)
- * Super admin bypasses all checks via god-mode in both guards.
- */
 @ApiTags('Endpoints')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), ProjectAccessGuard, PermissionGuard)

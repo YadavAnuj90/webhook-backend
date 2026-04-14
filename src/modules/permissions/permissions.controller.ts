@@ -17,8 +17,6 @@ import { CreateCustomRoleDto, UpdateCustomRoleDto } from './dto/custom-role.dto'
 export class PermissionsController {
   constructor(private permissionsService: PermissionsService) {}
 
-  // ── Permission Matrix (public reference) ──────────────────────────────────
-
   @Get('permissions/matrix')
   @ApiOperation({ summary: 'Get the full permission matrix for all built-in roles' })
   @ApiResponse({ status: 200, description: 'Permission matrix with resources, actions, and role mappings' })
@@ -42,8 +40,6 @@ export class PermissionsController {
   compareRoles(@Query('role1') role1: string, @Query('role2') role2: string) {
     return this.permissionsService.compareRoles(role1, role2);
   }
-
-  // ── Custom Roles (per project) ────────────────────────────────────────────
 
   @Post('projects/:projectId/roles')
   @ApiOperation({ summary: 'Create a custom role for a project' })

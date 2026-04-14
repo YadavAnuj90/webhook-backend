@@ -8,25 +8,6 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Server, Socket } from 'socket.io';
 
-/**
- * Real-Time WebSocket Gateway — delivery event subscriptions.
- *
- * Architecture decisions:
- * - JWT auth on handshake (token in query or auth header)
- * - Room-based subscriptions: project:{projectId}, endpoint:{endpointId}
- * - Events emitted from DeliveryService via RealtimeService (decoupled)
- * - No persistent state: rooms are in-memory, clients reconnect on server restart
- * - CORS inherits from app config
- *
- * Client usage:
- *   const socket = io('/realtime', { query: { token: '<jwt>' } });
- *   socket.emit('subscribe', { projectId: '...', endpointId: '...' });
- *   socket.on('delivery:success', (data) => { ... });
- *   socket.on('delivery:failed', (data) => { ... });
- *   socket.on('delivery:retry', (data) => { ... });
- *   socket.on('delivery:dead', (data) => { ... });
- *   socket.on('delivery:rate_queued', (data) => { ... });
- */
 @WebSocketGateway({
   namespace: '/realtime',
   cors: { origin: '*', credentials: true },
@@ -38,7 +19,6 @@ export class RealtimeGateway
   @WebSocketServer() server: Server;
   private readonly logger = new Logger(RealtimeGateway.name);
 
-  /** userId → Set<socketId> for quick presence lookup */
   private userSockets = new Map<string, Set<string>>();
 
   constructor(
@@ -49,8 +29,6 @@ export class RealtimeGateway
   afterInit() {
     this.logger.log('🔌 Realtime WebSocket gateway initialized');
   }
-
-  // ── Connection lifecycle ──────────────────────────────────────────────────
 
   async handleConnection(client: Socket) {
     try {
@@ -65,12 +43,10 @@ export class RealtimeGateway
         secret: this.config.get('JWT_SECRET'),
       });
 
-      // Attach user info to socket for room authorization
       (client as any).userId = payload.sub;
       (client as any).userEmail = payload.email;
       (client as any).userRole = payload.role;
 
-      // Track socket → user mapping
       if (!this.userSockets.has(payload.sub)) {
         this.userSockets.set(payload.sub, new Set());
       }
@@ -95,8 +71,6 @@ export class RealtimeGateway
     }
     this.logger.log(`Client disconnected: ${client.id}`);
   }
-
-  // ── Subscription management ───────────────────────────────────────────────
 
   @SubscribeMessage('subscribe')
   handleSubscribe(
@@ -137,8 +111,6 @@ export class RealtimeGateway
     }
   }
 
-  // ── Server-side emit methods (called from RealtimeService) ────────────────
-
   emitDeliveryEvent(
     eventName: string,
     projectId: string,
@@ -150,7 +122,6 @@ export class RealtimeGateway
       timestamp: new Date().toISOString(),
     };
 
-    // Emit to both project-level and endpoint-level subscribers
     this.server.to(`project:${projectId}`).emit(eventName, payload);
     this.server.to(`endpoint:${endpointId}`).emit(eventName, payload);
   }

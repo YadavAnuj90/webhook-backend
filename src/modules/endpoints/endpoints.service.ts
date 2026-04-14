@@ -1,23 +1,28 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, ConflictException, ForbiddenException, Optional } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { randomBytes } from 'crypto';
 import { Endpoint, EndpointStatus, SignatureScheme } from './schemas/endpoint.schema';
 import { SignatureUtil } from '../../utils/signature.util';
 import { Subscription, SubscriptionStatus } from '../billing/schemas/subscription.schema';
+import { RedisCache } from '../../common/cache/redis-cache.service';
 
 @Injectable()
 export class EndpointsService {
   constructor(
     @InjectModel(Endpoint.name)      private endpointModel: Model<Endpoint>,
     @InjectModel(Subscription.name)  private subModel:      Model<Subscription>,
+    @Optional() private cache?: RedisCache,
   ) {}
+
+  private async invalidateEndpointCache(id: string) {
+    if (this.cache) await this.cache.del(`ep:${id}`);
+  }
 
   async create(projectId: string, dto: any, userId?: string) {
     const exists = await this.endpointModel.findOne({ projectId, url: dto.url });
     if (exists) throw new ConflictException('Endpoint with this URL already exists in this project');
 
-    // ─── Quota enforcement ────────────────────────────────────────────────────
     if (userId) {
       const sub = await this.subModel.findOne({ userId });
       if (sub && sub.endpointsLimit > 0) {
@@ -64,12 +69,14 @@ export class EndpointsService {
   async update(id: string, projectId: string, dto: any) {
     const ep = await this.endpointModel.findOneAndUpdate({ _id: id, projectId }, dto, { new: true });
     if (!ep) throw new NotFoundException('Endpoint not found');
+    await this.invalidateEndpointCache(id);
     return ep;
   }
 
   async delete(id: string, projectId: string) {
     const ep = await this.endpointModel.findOneAndDelete({ _id: id, projectId });
     if (!ep) throw new NotFoundException('Endpoint not found');
+    await this.invalidateEndpointCache(id);
     return { message: 'Endpoint deleted' };
   }
 
@@ -89,14 +96,20 @@ export class EndpointsService {
     }
 
     await this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { secret, ed25519PublicKey }, { new: true });
+
+    await this.invalidateEndpointCache(id);
     return { secret, publicKey: ed25519PublicKey };
   }
 
   async pause(id: string, projectId: string) {
-    return this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { status: EndpointStatus.PAUSED }, { new: true });
+    const ep = await this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { status: EndpointStatus.PAUSED }, { new: true });
+    await this.invalidateEndpointCache(id);
+    return ep;
   }
 
   async resume(id: string, projectId: string) {
-    return this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { status: EndpointStatus.ACTIVE }, { new: true });
+    const ep = await this.endpointModel.findOneAndUpdate({ _id: id, projectId }, { status: EndpointStatus.ACTIVE }, { new: true });
+    await this.invalidateEndpointCache(id);
+    return ep;
   }
 }

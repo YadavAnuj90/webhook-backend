@@ -1,0 +1,12 @@
+#!/usr/bin/env sh
+# Husky pre-commit: run lint-staged (eslint --fix on staged .ts files).
+# Typechecking the full project in a pre-commit hook is too slow for every
+# commit — rely on CI for the definitive gate.
+
+. "$(dirname -- "$0")/_/husky.sh" 2>/dev/null || true
+
+# Run from the backend package directory regardless of where the commit was
+# invoked from, so relative paths in lint-staged configs resolve correctly.
+cd "$(dirname -- "$0")/.." || exit 1
+
+npx --no-install lint-staged

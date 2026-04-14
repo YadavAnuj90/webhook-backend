@@ -1,4 +1,4 @@
-// projects.controller.ts
+
 import {
   Controller, Get, Post, Put, Delete, Patch, Param, Body,
   UseGuards, Request, HttpCode, HttpStatus,
@@ -61,8 +61,6 @@ export class ProjectsController {
   delete(@Param('id') id: string, @Request() req: any) {
     return this.projectsService.delete(id, req.user.id, req.user.role);
   }
-
-  // ── Per-Project Member Management (resource-scoped RBAC) ──────────────────
 
   @Post(':id/members')
   @ApiOperation({ summary: 'Add a member to the project with a specific role' })

@@ -42,19 +42,6 @@ export interface StorageConfig {
   serviceAccountKey?: string;
 }
 
-/**
- * Endpoint — config entity looked up on every delivery attempt.
- *
- * DBA decisions:
- * - versionKey:false
- * - Soft delete: deletedAt field — queries must filter { deletedAt: null }
- * - Rate-limit counters (deliveriesThisMinute/Hour/Day) updated atomically
- *   via $inc + conditional $set for reset timestamps in one findOneAndUpdate
- * - failureCount, totalDelivered, totalFailed updated atomically via $inc
- * - Health fields (lastFailureAt, lastSuccessAt) updated atomically via $set
- * - Partial indexes on status:'active' — paused/disabled endpoints skipped
- *   in delivery worker queries
- */
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -93,14 +80,12 @@ export class Endpoint extends Document {
 
   @Prop({ type: [Object], default: [] }) filterRules: FilterRule[];
 
-  // Health counters — all via $inc / $set atomically
   @Prop({ default: 0 })                failureCount:   number;
   @Prop({ type: Date, default: null }) lastFailureAt:  Date | null;
   @Prop({ type: Date, default: null }) lastSuccessAt:  Date | null;
   @Prop({ default: 0 })               totalDelivered: number;
   @Prop({ default: 0 })               totalFailed:    number;
 
-  // Rate limit counters — reset atomically via $set when window expires
   @Prop({ default: 0 })               deliveriesThisMinute: number;
   @Prop({ default: 0 })               deliveriesThisHour:   number;
   @Prop({ default: 0 })               deliveriesThisDay:    number;
@@ -125,15 +110,11 @@ export class Endpoint extends Document {
   @Prop({ type: [{ dayOfWeek: Number, startHour: Number, endHour: Number }], default: [] })
   maintenanceWindows: { dayOfWeek: number; startHour: number; endHour: number }[];
 
-  // Soft delete
   @Prop({ type: Date, default: null }) deletedAt: Date | null;
 }
 
 export const EndpointSchema = SchemaFactory.createForClass(Endpoint);
 
-// ─── Encryption-at-rest for sensitive credentials ─────────────────────────
-// Fields that must be encrypted before touching the DB. `PayloadCrypto` is
-// a no-op when PAYLOAD_ENCRYPTION_KEY is unset, so dev workflows still work.
 const ENC_PREFIX = 'enc:';
 const isEncrypted = (v: any) => typeof v === 'string' && v.startsWith(ENC_PREFIX);
 
@@ -161,7 +142,6 @@ EndpointSchema.pre('save', function (next) {
   } catch (err) { next(err as any); }
 });
 
-// Also intercept findOneAndUpdate / updateOne that $set sensitive fields.
 function encryptUpdatePatch(this: any, next: Function) {
   try {
     const upd = this.getUpdate?.() || {};
@@ -181,7 +161,6 @@ EndpointSchema.pre('findOneAndUpdate', encryptUpdatePatch as any);
 EndpointSchema.pre('updateOne',        encryptUpdatePatch as any);
 EndpointSchema.pre('updateMany',       encryptUpdatePatch as any);
 
-/** Helper: decrypt the sensitive fields on a freshly-loaded endpoint. */
 export function decryptEndpointSecrets<T = any>(ep: T | null): T | null {
   if (!ep) return ep;
   const e: any = ep;
@@ -194,8 +173,6 @@ export function decryptEndpointSecrets<T = any>(ep: T | null): T | null {
   return ep;
 }
 
-// DELIVERY HOT PATH: active endpoints for a project, by event type
-// Partial index on status:'active' — paused/disabled endpoints not indexed here
 EndpointSchema.index(
   { projectId: 1, status: 1 },
   { name: 'idx_project_status' },
@@ -208,19 +185,16 @@ EndpointSchema.index(
   },
 );
 
-// Dashboard list: newest first, exclude deleted
 EndpointSchema.index(
   { projectId: 1, createdAt: -1 },
   { name: 'idx_project_time' },
 );
 
-// Soft-delete filter
 EndpointSchema.index(
   { projectId: 1, deletedAt: 1 },
   { name: 'idx_project_deleted' },
 );
 
-// Delivery health monitoring: recently failed endpoints
 EndpointSchema.index(
   { projectId: 1, lastFailureAt: -1 },
   { sparse: true, name: 'idx_project_last_failure' },

@@ -24,20 +24,12 @@ export class BillingController {
     private readonly resellerSvc: ResellerService,
   ) {}
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  PLANS
-  // ═══════════════════════════════════════════════════════════════════════════
-
   @Get('plans')
   @ApiOperation({ summary: 'List all available subscription plans with pricing and limits' })
   @ApiResponse({ status: 200, description: 'Array of plan objects (free, starter, pro, enterprise)' })
   getPlans(): any[] {
     return this.subSvc.getSystemPlans();
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  SUBSCRIPTION (self-service portal)
-  // ═══════════════════════════════════════════════════════════════════════════
 
   @Get('subscription')
   @ApiOperation({ summary: 'Get current subscription and trial status' })
@@ -88,10 +80,6 @@ export class BillingController {
     return this.subSvc.cancelSubscription(req.user.userId, body.reason);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  INVOICES
-  // ═══════════════════════════════════════════════════════════════════════════
-
   @Get('invoices')
   @ApiOperation({ summary: 'Get all payment invoices for the current user' })
   @ApiResponse({ status: 200, description: 'Array of invoice objects with amount, status, and download link' })
@@ -109,10 +97,6 @@ export class BillingController {
   async getInvoice(@Req() req: any, @Param('id') id: string): Promise<any> {
     return this.subSvc.getInvoiceById(req.user.userId, id);
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  CREDITS
-  // ═══════════════════════════════════════════════════════════════════════════
 
   @Get('credits/packages')
   @ApiOperation({ summary: 'List available credit packages for purchase' })
@@ -176,10 +160,6 @@ export class BillingController {
     return this.creditsSvc.updateAutoTopUp(req.user.userId, body);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  SALES INQUIRIES (Enterprise "Contact Sales")
-  // ═══════════════════════════════════════════════════════════════════════════
-
   @Post('sales-inquiry')
   @ApiOperation({ summary: 'Submit an enterprise sales inquiry (Contact Sales form)' })
   @ApiBody({ schema: { required: ['businessEmail', 'companyName'], properties: {
@@ -236,10 +216,6 @@ export class BillingController {
   ): Promise<any> {
     return this.creditsSvc.updateInquiryStatus(id, body.status as any, body.adminNotes);
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  RESELLER PORTAL
-  // ═══════════════════════════════════════════════════════════════════════════
 
   @Get('reseller/profile')
   @ApiOperation({ summary: 'Get reseller profile (Enterprise plan required)' })
@@ -337,10 +313,6 @@ export class BillingController {
   async getRevenue(@Req() req: any): Promise<any> {
     return this.resellerSvc.getResellerRevenue(req.user.userId);
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  //  CUSTOM PLANS (Reseller creates plans for customers)
-  // ═══════════════════════════════════════════════════════════════════════════
 
   @Get('reseller/plans')
   @ApiOperation({ summary: 'List custom plans created by the reseller for their customers' })

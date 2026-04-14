@@ -52,8 +52,6 @@ export class WorkspacesController {
     return this.svc.delete(id, req.user.id, req.user.role);
   }
 
-  // ── INVITE (Enterprise Plan Required) ─────────────────────────────────────
-
   @Post(':id/invite')
   @ApiOperation({
     summary: 'Invite a member by email (Enterprise plan required)',
@@ -67,8 +65,6 @@ export class WorkspacesController {
     return this.svc.invite(id, req.user.id, dto, req.user.role);
   }
 
-  // ── ACCEPT INVITE (Token link) ────────────────────────────────────────────
-
   @Post('invite/:token/accept')
   @ApiOperation({ summary: 'Accept a workspace invite using the token from the invitation link' })
   @ApiParam({ name: 'token', description: 'Invite token from email', type: String })
@@ -76,8 +72,6 @@ export class WorkspacesController {
   acceptInvite(@Param('token') token: string, @Request() req: any) {
     return this.svc.acceptInvite(token, req.user.id);
   }
-
-  // ── ACCEPT INVITE (OTP) ───────────────────────────────────────────────────
 
   @Post(':id/invite/verify-otp')
   @ApiOperation({
@@ -96,16 +90,12 @@ export class WorkspacesController {
     return this.svc.acceptInviteByOtp(id, otp, req.user.id);
   }
 
-  // ── LIST INVITES ──────────────────────────────────────────────────────────
-
   @Get(':id/invites')
   @ApiOperation({ summary: 'List pending invites for a workspace' })
   @ApiParam({ name: 'id', description: 'Workspace ID', type: String })
   listInvites(@Param('id') id: string, @Request() req: any) {
     return this.svc.listInvites(id, req.user.id, req.user.role);
   }
-
-  // ── REVOKE INVITE ─────────────────────────────────────────────────────────
 
   @Delete(':id/invites/:inviteId')
   @ApiOperation({ summary: 'Revoke a pending invite' })
@@ -118,8 +108,6 @@ export class WorkspacesController {
   ) {
     return this.svc.revokeInvite(id, inviteId, req.user.id, req.user.role);
   }
-
-  // ── MEMBER MANAGEMENT ─────────────────────────────────────────────────────
 
   @Delete(':id/members/:uid')
   @ApiOperation({ summary: 'Remove a member from the workspace' })

@@ -14,25 +14,19 @@ import * as express from 'express';
 import { setupBullBoard } from './common/bull-board/bull-board.setup';
 import { join } from 'path';
 
-// ── Compression (npm install compression @types/compression) ─────────────────
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 let compression: any = null;
-try { compression = require('compression'); } catch (_) { /* not installed — run: npm install compression */ }
+try { compression = require('compression'); } catch (_) {  }
 
-// ── Sentry (optional — enable with: npm install @sentry/node) ─────────────
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 let Sentry: any = null;
-try { Sentry = require('@sentry/node'); } catch (_) { /* not installed, ok */ }
+try { Sentry = require('@sentry/node'); } catch (_) {  }
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { rawBody: true, bufferLogs: true });
 
-  // ── Replace NestJS default logger with Winston ────────────────────────────
   const winstonLogger = app.get(WINSTON_MODULE_NEST_PROVIDER);
   app.useLogger(winstonLogger);
   const logger = winstonLogger;
 
-  // ── Init Sentry ────────────────────────────────────────────────────────────
   const sentryDsn = process.env.SENTRY_DSN;
   if (Sentry && sentryDsn) {
     Sentry.init({
@@ -43,12 +37,11 @@ async function bootstrap() {
     logger.log('✅ Sentry initialized', 'Bootstrap');
   }
 
-  // ── Helmet — hardened HTTP security headers ───────────────────────────────
   app.use(helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc:  ["'self'"],
-        scriptSrc:   ["'self'", "'unsafe-inline'"],   // Swagger UI needs inline scripts
+        scriptSrc:   ["'self'", "'unsafe-inline'"],
         styleSrc:    ["'self'", "'unsafe-inline'"],
         imgSrc:      ["'self'", 'data:', 'https:'],
         connectSrc:  ["'self'"],
@@ -56,25 +49,23 @@ async function bootstrap() {
         objectSrc:   ["'none'"],
       },
     },
-    crossOriginEmbedderPolicy: false,   // Swagger UI iframes
+    crossOriginEmbedderPolicy: false,
     hsts: { maxAge: 31536000, includeSubDomains: true, preload: true },
     referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
     xContentTypeOptions: true,
     xFrameOptions: { action: 'deny' },
-    xXssProtection: false,              // modern browsers use CSP instead
+    xXssProtection: false,
     hidePoweredBy: true,
   }));
   app.enableCors({ origin: process.env.FRONTEND_URL || 'http://localhost:3001', credentials: true });
   app.setGlobalPrefix('api/v1');
 
-  // ── Body size limit: 1 MB max (raw body still available for webhook HMAC) ──
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
-  // ── Global request timeout: prevents slow-loris / stuck connections ───────
   const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '30000', 10);
   app.use((req: any, res: any, next: any) => {
-    // Long-poll / SSE / websocket endpoints may want to opt out
+
     if (req.url.startsWith('/api/v1/realtime') || req.url.startsWith('/socket.io')) return next();
     req.setTimeout(REQUEST_TIMEOUT_MS, () => {
       if (!res.headersSent) res.status(504).json({ statusCode: 504, message: 'Request timed out', path: req.url });
@@ -83,7 +74,6 @@ async function bootstrap() {
     next();
   });
 
-  // ── Metrics endpoint guard: allow-list by IP or require METRICS_TOKEN ─────
   const metricsAllow = (process.env.METRICS_ALLOW_IPS || '').split(',').map(s => s.trim()).filter(Boolean);
   const metricsToken = process.env.METRICS_TOKEN || '';
   app.use((req: any, res: any, next: any) => {
@@ -91,41 +81,36 @@ async function bootstrap() {
     const ip = (req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.ip || req.connection?.remoteAddress || '';
     const tokenOk = metricsToken && req.headers['x-metrics-token'] === metricsToken;
     const ipOk    = metricsAllow.length > 0 && metricsAllow.includes(ip);
-    if (!metricsToken && metricsAllow.length === 0) return next(); // not configured → open (dev)
+    if (!metricsToken && metricsAllow.length === 0) return next();
     if (tokenOk || ipOk) return next();
     return res.status(403).json({ statusCode: 403, message: 'Metrics endpoint forbidden' });
   });
 
-  // ── Static file serving (resume uploads) ─────────────────────────────────
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
-  // ── Response compression ──────────────────────────────────────────────────
   if (compression) app.use(compression());
 
   app.useGlobalPipes(new ValidationPipe({
     whitelist: true,
     transform: true,
-    forbidNonWhitelisted: true,       // ← reject unknown fields (was false)
+    forbidNonWhitelisted: true,
     transformOptions: { enableImplicitConversion: true },
   }));
   app.useGlobalFilters(new GlobalExceptionFilter());
   app.useGlobalInterceptors(new LoggingInterceptor());
 
-  // ── Global guards (order matters: EmailVerified → Subscription) ─────────
   const reflector   = app.get(Reflector);
   const trialSvc    = app.get(TrialService);
-  // EmailVerifiedGuard runs first — blocks unverified users from all protected routes
+
   app.useGlobalGuards(new EmailVerifiedGuard(reflector));
   app.useGlobalGuards(new SubscriptionGuard(trialSvc, reflector));
 
-  // ── Bull Board queue monitoring dashboard ─────────────────────────────────
   await setupBullBoard(app);
 
-  // ── Seed default credit packages if not present ───────────────────────────
   try {
     const creditsSvc = app.get(CreditsService);
     await creditsSvc.seedDefaultPackages();
-  } catch (_) { /* ignore on first boot */ }
+  } catch (_) {  }
 
   const config = new DocumentBuilder()
     .setTitle('WebhookOS API')
@@ -181,7 +166,6 @@ async function bootstrap() {
     },
   });
 
-  // ── Graceful shutdown ─────────────────────────────────────────────────────
   app.enableShutdownHooks();
 
   const port = process.env.PORT || 3000;
@@ -189,7 +173,6 @@ async function bootstrap() {
   logger.log(`🚀 WebhookOS running on http://localhost:${port}`);
   logger.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
 
-  // ── SIGTERM / SIGINT graceful close ───────────────────────────────────────
   let shuttingDown = false;
   const shutdown = async (signal: string) => {
     if (shuttingDown) return;
@@ -201,8 +184,7 @@ async function bootstrap() {
     }, 30_000);
     forceExit.unref();
     try {
-      // app.close() triggers OnModuleDestroy on all providers, which closes
-      // BullMQ queues / processors and Mongoose connections.
+
       await app.close();
       clearTimeout(forceExit);
       process.exit(0);

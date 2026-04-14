@@ -1,9 +1,10 @@
 import {
   IsString, IsNotEmpty, IsOptional, IsEmail, IsNumber,
-  Min, Max, IsIn, MaxLength, IsBoolean, IsUrl,
+  Min, Max, IsIn, MaxLength, IsBoolean,
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsSafeUrl } from '../../../common/decorators/is-safe-url.validator';
 
 export class CreateAlertDto {
   @ApiProperty({ example: 'High failure rate alert' })
@@ -34,7 +35,7 @@ export class CreateAlertDto {
 
   @ApiPropertyOptional({ example: 'https://hooks.slack.com/services/...' })
   @IsOptional()
-  @IsUrl()
+  @IsSafeUrl()
   notifySlack?: string;
 
   @ApiPropertyOptional({ example: 30, minimum: 1, maximum: 1440 })

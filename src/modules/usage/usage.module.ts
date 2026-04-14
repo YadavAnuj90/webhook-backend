@@ -36,7 +36,6 @@ export class UsageService {
     const days = period === 'day' ? 1 : period === 'week' ? 7 : 30;
     const since = new Date(Date.now() - days * 24 * 3600 * 1000);
 
-    // Build daily chart from real DB data
     const now = new Date();
     const chartPromises = Array.from({ length: days }, async (_, i) => {
       const dayStart = new Date(now);
@@ -60,7 +59,6 @@ export class UsageService {
       total: acc.total + d.delivered + d.failed + d.pending,
     }), { delivered: 0, failed: 0, pending: 0, total: 0 });
 
-    // Count active endpoints for this user's projects
     const limits = PLAN_LIMITS[plan] || PLAN_LIMITS.free;
     const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
     const monthlyEvents = await this.eventModel.countDocuments({ createdAt: { $gte: monthStart } });
@@ -70,7 +68,7 @@ export class UsageService {
     return {
       period, chart, totals, plan, limits,
       overage: { events: overage, estimatedCost: parseFloat(overagePrice.toFixed(4)), currency: 'USD' },
-      bandwidth: { bytes: totals.total * 1024, requests: totals.total }, // estimate
+      bandwidth: { bytes: totals.total * 1024, requests: totals.total },
       topEndpoints: [],
     };
   }

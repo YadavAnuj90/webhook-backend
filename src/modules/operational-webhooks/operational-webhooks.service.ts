@@ -42,7 +42,6 @@ export class OperationalWebhooksService {
     return { secret };
   }
 
-  /** Called internally by delivery, circuit breaker, billing etc. */
   async fire(projectId: string, eventType: OperationalEvent, data: Record<string, any>): Promise<void> {
     const hooks = await this.model.find({ projectId, isActive: true, events: eventType });
     if (!hooks.length) return;
@@ -75,7 +74,6 @@ export class OperationalWebhooksService {
     }));
   }
 
-  /** Test a configured operational webhook */
   async test(projectId: string, id: string) {
     const hook = await this.model.findOne({ _id: id, projectId });
     if (!hook) throw new NotFoundException();

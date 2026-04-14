@@ -17,7 +17,6 @@ export function getNextRetryAt(attempt: number): Date | null {
   return delay === null ? null : new Date(Date.now() + delay);
 }
 
-// FEATURE 16: Retry Budget per Endpoint
 export function getNextRetryAtForStrategy(
   attempt: number,
   strategy: string,
@@ -29,7 +28,7 @@ export function getNextRetryAtForStrategy(
   } else if (strategy === 'fixed') {
     delaySecs = fixedDelaySecs;
   } else {
-    // exponential: capped at 1hr
+
     delaySecs = Math.min(Math.pow(2, attempt) * 30, 3600);
   }
   return new Date(Date.now() + delaySecs * 1000);

@@ -9,7 +9,7 @@ import { Model } from 'mongoose';
 import { createHash, randomBytes } from 'crypto';
 import * as bcrypt from 'bcryptjs';
 import { User, UserStatus } from '../users/schemas/user.schema';
-// Use the canonical ApiKey from apikeys module (keyHash field, keyPrefix)
+
 import { ApiKey, ApiKeyDocument } from '../apikeys/schemas/apikey.schema';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
@@ -43,9 +43,9 @@ export class AuthService {
       emailVerifyToken: this.hashToken(verifyToken),
     });
     await this.auditService.log({ userId: user.id, userEmail: user.email, action: AuditAction.REGISTER, ipAddress: ip });
-    // ── Start 10-day free trial on every new registration ──
+
     await this.trialService.startTrial(user.id);
-    // ── Send verification email (non-blocking) ──────────────
+
     this.emailService.sendVerificationEmail(user.email, user.firstName, verifyToken).catch(() => {});
     const tokens = await this.issueTokens(user, ip, 'Web');
     return { user: this.safeUser(user), ...tokens };
@@ -69,7 +69,6 @@ export class AuthService {
     return { message: 'Verification email sent' };
   }
 
-  // ── Google OAuth ──────────────────────────────────────────────────────────
   async loginWithGoogle(googleProfile: {
     googleId: string; email: string; firstName: string; lastName: string; avatarUrl: string | null;
   }, ip: string): Promise<{ accessToken: string; refreshToken: string; user: any; isNew: boolean }> {
@@ -79,7 +78,7 @@ export class AuthService {
 
     let isNew = false;
     if (!user) {
-      // New user — create account, start trial, mark email verified (Google already verified it)
+
       user = await this.userModel.create({
         googleId:     googleProfile.googleId,
         email:        googleProfile.email.toLowerCase(),
@@ -87,13 +86,13 @@ export class AuthService {
         lastName:     googleProfile.lastName,
         fullName:     `${googleProfile.firstName} ${googleProfile.lastName}`,
         avatarUrl:    googleProfile.avatarUrl,
-        emailVerified: true,          // Google has already verified the email
-        passwordHash:  null,          // no password for Google-only accounts
+        emailVerified: true,
+        passwordHash:  null,
       });
       await this.trialService.startTrial(user.id);
       isNew = true;
     } else if (!user.googleId) {
-      // Existing email/password user — link Google to their account
+
       await this.userModel.findByIdAndUpdate(user.id, {
         googleId:  googleProfile.googleId,
         avatarUrl: googleProfile.avatarUrl || user.avatarUrl,
@@ -116,7 +115,7 @@ export class AuthService {
     const user = await this.userModel.findOne({ email: email.toLowerCase() });
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (user.status === UserStatus.SUSPENDED) throw new UnauthorizedException('Account suspended');
-    // SSO-only accounts may have no passwordHash; block password login explicitly.
+
     if (!user.passwordHash) throw new UnauthorizedException('Password login not available for this account');
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
@@ -124,7 +123,6 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    // ── 2FA: If enabled, return a temporary challenge token instead of full tokens ──
     if (user.twoFactorEnabled) {
       const challengeToken = this.jwtService.sign(
         { sub: user.id, purpose: '2fa_challenge' },
@@ -143,9 +141,6 @@ export class AuthService {
     return { user: this.safeUser(user), ...tokens };
   }
 
-  /**
-   * Complete 2FA login: validate challenge token + TOTP code, then issue real tokens.
-   */
   async verify2faLogin(
     challengeToken: string,
     code: string,
@@ -251,7 +246,6 @@ export class AuthService {
     return { message: 'Password changed. Please login again.' };
   }
 
-  // API Key management — delegates to the canonical apikeys schema (keyHash field)
   async createApiKey(userId: string, name: string, scopes: string[], expiresAt?: string, ip?: string) {
     const raw = `whk_${randomBytes(32).toString('hex')}`;
     const key = await this.apiKeyModel.create({

@@ -1,4 +1,4 @@
-// Temporary type stub — replace by running: npm install passport-google-oauth20 @types/passport-google-oauth20
+
 declare module 'passport-google-oauth20' {
   import { Strategy as PassportStrategy } from 'passport';
   export type VerifyCallback = (err: any, user?: any, info?: any) => void;

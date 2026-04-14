@@ -22,7 +22,7 @@ export class ApiKeysService {
       expiresAt: dto.expiresAt ? new Date(dto.expiresAt) : null,
       description: dto.description,
     });
-    // Return full key ONCE — never again
+
     return { ...doc.toObject(), key: rawKey };
   }
 

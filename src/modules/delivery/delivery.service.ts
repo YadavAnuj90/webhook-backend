@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable, Logger, Optional } from '@nestjs/common';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import { InjectModel } from '@nestjs/mongoose';
 import { InjectQueue } from '@nestjs/bull';
@@ -38,7 +38,6 @@ import { isInMaintenanceWindow } from '../../utils/maintenance-window';
 import { WEBHOOK_QUEUE, DEAD_LETTER_QUEUE } from '../../queue/queue.constants';
 import { RealtimeService } from '../realtime/realtime.service';
 
-// OAuth2 token cache: endpointId → { token, expiresAt }
 const oauth2TokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 @Injectable()
@@ -59,18 +58,33 @@ export class DeliveryService {
     private metrics: MetricsService,
     private notifications: NotificationsService,
     private realtime: RealtimeService,
+
+    @Optional() private readonly sharedBreaker?: import('./shared-breaker.service').SharedCircuitBreaker,
+
+    @Optional() private readonly cache?: import('../../common/cache/redis-cache.service').RedisCache,
+
+    @Optional() private readonly logWriter?: import('./delivery-log-writer.service').DeliveryLogWriter,
   ) {}
 
   async deliver(eventId: string): Promise<void> {
     const event = await this.eventModel.findById(eventId);
     if (!event) return;
 
-    const endpointRaw = await this.endpointModel.findById(event.endpointId);
+    let endpointRaw: any = null;
+    const cacheKey = `ep:${event.endpointId}`;
+    if (this.cache) {
+      endpointRaw = await this.cache.get<any>(cacheKey);
+    }
+    if (!endpointRaw) {
+      endpointRaw = await this.endpointModel.findById(event.endpointId).lean();
+      if (endpointRaw && this.cache) {
+        this.cache.set(cacheKey, endpointRaw, parseInt(process.env.ENDPOINT_CACHE_TTL_S || '30', 10)).catch(() => {});
+      }
+    }
     if (!endpointRaw || endpointRaw.status !== EndpointStatus.ACTIVE) return;
-    // Decrypt sensitive fields into an in-memory copy (never persisted back).
+
     const endpoint = decryptEndpointSecrets(endpointRaw) as Endpoint;
 
-    // ─── 0. FEATURE 18: Check Maintenance Windows ────────────────────────────
     if (isInMaintenanceWindow(endpoint.maintenanceWindows)) {
       const windowEnd = new Date(Date.now() + 3600_000);
       await this.eventModel.findByIdAndUpdate(eventId, {
@@ -83,10 +97,8 @@ export class DeliveryService {
       return;
     }
 
-    // ─── 1. Filter Rules ─────────────────────────────────────────────────────
     let payload: any = event.payload;
 
-    // FEATURE 5: Decrypt payload if encrypted
     if (
       typeof payload === 'string' &&
       (payload as string).startsWith('enc:')
@@ -121,12 +133,10 @@ export class DeliveryService {
       return;
     }
 
-    // ─── 2. Rate Limiting — drip-delivery queuing instead of hard rejection ───
     const rateLimitResult = await this.rateLimiter.checkRateLimit(endpoint.id);
     if (!rateLimitResult.allowed) {
       const retryAfterMs = rateLimitResult.retryAfterMs || 60_000;
 
-      // Cap drip-delivery delay: max 1 hour. Beyond that → hard rate-limit.
       if (retryAfterMs > 3_600_000) {
         await this.eventModel.findByIdAndUpdate(eventId, { status: EventStatus.RATE_LIMITED });
         await this.analytics.record({ projectId: event.projectId, endpointId: endpoint.id, metric: 'rateLimited' });
@@ -135,7 +145,6 @@ export class DeliveryService {
         return;
       }
 
-      // Drip-deliver: queue the event for re-delivery when the window resets
       await this.eventModel.findByIdAndUpdate(eventId, {
         status: EventStatus.RATE_QUEUED,
         nextRetryAt: new Date(Date.now() + retryAfterMs),
@@ -163,11 +172,14 @@ export class DeliveryService {
       return;
     }
 
-    // ─── 3. Circuit Breaker ───────────────────────────────────────────────────
     const breaker = this.getBreaker(endpoint.id);
     if (breaker.opened) { await this.scheduleRetry(event); return; }
+    if (this.sharedBreaker && await this.sharedBreaker.isOpen(endpoint.id)) {
 
-    // ─── 4. Route by endpoint type ────────────────────────────────────────────
+      await this.scheduleRetry(event);
+      return;
+    }
+
     if (endpoint.endpointType === EndpointType.S3) {
       return this.deliverToS3(event, endpoint);
     }
@@ -175,8 +187,6 @@ export class DeliveryService {
       return this.deliverToGcs(event, endpoint);
     }
 
-    // ─── 5. HTTP Delivery ─────────────────────────────────────────────────────
-    // FEATURE 3: IP Allowlist check
     if (endpoint.allowedIps && endpoint.allowedIps.length > 0) {
       try {
         const hostname = new URL(endpoint.url).hostname;
@@ -199,7 +209,6 @@ export class DeliveryService {
       }
     }
 
-    // FEATURE 15: Payload size limit check
     let deliveryPayload = payload;
     if (endpoint.maxPayloadBytes > 0) {
       const size = Buffer.byteLength(JSON.stringify(payload), 'utf8');
@@ -217,7 +226,6 @@ export class DeliveryService {
       }
     }
 
-    // FEATURE 4: PII Scrubbing
     if (endpoint.piiFields && endpoint.piiFields.length > 0) {
       deliveryPayload = PiiScrubber.scrub(payload, endpoint.piiFields);
     }
@@ -236,14 +244,12 @@ export class DeliveryService {
       deliveryPayload,
     );
 
-    // FEATURE 7: A/B Delivery / Canary Rollout
     const isCanary =
       endpoint.canaryPercent > 0 &&
       endpoint.canaryUrl &&
       Math.random() * 100 < endpoint.canaryPercent;
     const targetUrl = isCanary ? endpoint.canaryUrl! : endpoint.url;
 
-    // ─── SSRF defence: validate target, block private IPs, pin resolved IP ───
     let safe: { url: URL; ip: string; family: 4 | 6 };
     try {
       safe = await assertSafeUrl(targetUrl);
@@ -256,7 +262,7 @@ export class DeliveryService {
       safe.url.protocol as 'http:' | 'https:',
       safe.ip,
       safe.family,
-      // Reuse MTLS certs if already configured for this endpoint
+
       endpoint.authType === EndpointAuthType.MTLS && endpoint.mtlsConfig
         ? { cert: endpoint.mtlsConfig.certificate, key: endpoint.mtlsConfig.privateKey, ca: endpoint.mtlsConfig.caCertificate || undefined, rejectUnauthorized: true }
         : {},
@@ -267,7 +273,7 @@ export class DeliveryService {
       maxRedirects: 0,
       httpAgent:  safe.url.protocol === 'http:'  ? pinnedAgent : undefined,
       httpsAgent: safe.url.protocol === 'https:' ? pinnedAgent : undefined,
-      // Defence in depth: cap response size in memory.
+
       maxContentLength: 2 * 1024 * 1024,
       maxBodyLength:    Math.min(endpoint.maxPayloadBytes || 2 * 1024 * 1024, 10 * 1024 * 1024),
     };
@@ -288,7 +294,7 @@ export class DeliveryService {
       }
       const responseBody = JSON.stringify(response.data).slice(0, 500);
 
-      await this.logModel.create({
+      const successLog = {
         eventId: event.id,
         endpointId: endpoint.id,
         projectId: event.projectId,
@@ -300,10 +306,15 @@ export class DeliveryService {
         latencyMs,
         attemptedAt: new Date(),
         isCanary,
-      });
+
+        requestId: (event as any).requestId ?? null,
+      };
+
+      if (this.logWriter) this.logWriter.enqueue(successLog as any);
+      else await this.logModel.create(successLog);
 
       if (success) {
-        // Update canary metrics
+
         if (isCanary) {
           await this.endpointModel.findByIdAndUpdate(endpoint.id, {
             $inc: { canaryDelivered: 1 },
@@ -326,6 +337,10 @@ export class DeliveryService {
           lastSuccessAt: new Date(),
           $inc: { totalDelivered: 1 },
         });
+
+        if (this.sharedBreaker) {
+          this.sharedBreaker.recordSuccess(endpoint.id).catch(() => {});
+        }
         await this.analytics.record({
           projectId: event.projectId,
           endpointId: endpoint.id,
@@ -351,7 +366,6 @@ export class DeliveryService {
           `Delivered ${event.id} → ${targetUrl} [${response.status}] in ${latencyMs}ms`,
         );
 
-        // Real-time notification
         this.realtime.notifyDeliverySuccess({
           projectId: event.projectId,
           endpointId: endpoint.id,
@@ -361,7 +375,6 @@ export class DeliveryService {
           latencyMs,
         });
 
-        // FEATURE 12: Fire-and-forget shadow delivery (SSRF-checked)
         if (endpoint.shadowUrl) {
           (async () => {
             try {
@@ -380,7 +393,7 @@ export class DeliveryService {
           })();
         }
       } else {
-        // Treat non-2xx as failure
+
         if (isCanary) {
           await this.endpointModel.findByIdAndUpdate(endpoint.id, {
             $inc: { canaryFailed: 1 },
@@ -418,7 +431,6 @@ export class DeliveryService {
       headers,
     };
 
-    // ─── Outbound Authentication ──────────────────────────────────────────────
     switch (endpoint.authType) {
       case EndpointAuthType.BEARER_TOKEN:
         if (endpoint.bearerToken) headers['Authorization'] = `Bearer ${endpoint.bearerToken}`;
@@ -446,7 +458,6 @@ export class DeliveryService {
     return config;
   }
 
-  /** Fetch + cache OAuth2 bearer token */
   private async getOAuth2Token(endpointId: string, cfg: { tokenUrl: string; clientId: string; clientSecret: string; scope?: string; audience?: string }): Promise<string> {
     const cached = oauth2TokenCache.get(endpointId);
     if (cached && Date.now() < cached.expiresAt) return cached.token;
@@ -466,14 +477,12 @@ export class DeliveryService {
 
     const token = res.data.access_token;
     const expiresIn = (res.data.expires_in || 3600) * 1000;
-    oauth2TokenCache.set(endpointId, { token, expiresAt: Date.now() + expiresIn - 60_000 }); // 60s buffer
+    oauth2TokenCache.set(endpointId, { token, expiresAt: Date.now() + expiresIn - 60_000 });
     return token;
   }
 
-  /** Deliver payload to AWS S3 */
   private async deliverToS3(event: WebhookEvent, endpoint: Endpoint): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore — optional package, install with: npm install @aws-sdk/client-s3
+    // @ts-ignore - optional peer dep
     const { S3Client, PutObjectCommand } = await (import('@aws-sdk/client-s3') as Promise<any>).catch(() => { throw new Error('@aws-sdk/client-s3 not installed. Run: npm install @aws-sdk/client-s3'); });
     const cfg = endpoint.storageConfig!;
     const s3 = new S3Client({ region: cfg.region || 'us-east-1', credentials: cfg.accessKeyId ? { accessKeyId: cfg.accessKeyId, secretAccessKey: cfg.secretAccessKey! } : undefined });
@@ -484,10 +493,8 @@ export class DeliveryService {
     this.logger.log(`S3 delivery: ${event.id} → s3://${cfg.bucket}/${key}`);
   }
 
-  /** Deliver payload to GCS */
   private async deliverToGcs(event: WebhookEvent, endpoint: Endpoint): Promise<void> {
-    // eslint-disable-next-line @typescript-eslint/ban-ts-comment
-    // @ts-ignore — optional package, install with: npm install @google-cloud/storage
+    // @ts-ignore - optional peer dep
     const { Storage } = await (import('@google-cloud/storage') as Promise<any>).catch(() => { throw new Error('@google-cloud/storage not installed. Run: npm install @google-cloud/storage'); });
     const cfg = endpoint.storageConfig!;
     const credentials = cfg.serviceAccountKey ? JSON.parse(cfg.serviceAccountKey) : undefined;
@@ -519,7 +526,7 @@ export class DeliveryService {
       ? JSON.stringify(err.response.data).slice(0, 500)
       : null;
 
-    await this.logModel.create({
+    const failureLog = {
       eventId: event.id,
       endpointId: endpoint.id,
       projectId: event.projectId,
@@ -531,12 +538,19 @@ export class DeliveryService {
       latencyMs,
       errorMessage,
       attemptedAt: new Date(),
-    });
+      requestId: (event as any).requestId ?? null,
+    };
+    if (this.logWriter) this.logWriter.enqueue(failureLog as any);
+    else await this.logModel.create(failureLog);
 
     await this.endpointModel.findByIdAndUpdate(endpoint.id, {
       $inc: { failureCount: 1, totalFailed: 1 },
       lastFailureAt: new Date(),
     });
+
+    if (this.sharedBreaker) {
+      this.sharedBreaker.recordFailure(endpoint.id).catch(() => {});
+    }
 
     const lastResponse = {
       statusCode: statusCode ?? null,
@@ -560,7 +574,15 @@ export class DeliveryService {
       status_code: String(statusCode || 'unknown'),
     });
 
-    // FEATURE 16: Use endpoint-specific max retries
+    this.metrics.deliveryDuration.observe(
+      {
+        project_id: event.projectId,
+        endpoint_id: endpoint.id,
+        status: 'failure',
+      },
+      latencyMs,
+    );
+
     const maxRetries = endpoint.maxRetries || MAX_RETRY_ATTEMPTS;
 
     if (newRetryCount >= maxRetries) {
@@ -597,7 +619,7 @@ export class DeliveryService {
       });
       this.logger.warn(`Event ${event.id} → DLQ after ${newRetryCount} attempts`);
     } else {
-      // FEATURE 16: Use endpoint-specific retry strategy
+
       const nextRetryAt = getNextRetryAtForStrategy(
         newRetryCount,
         endpoint.retryStrategy || 'exponential',
@@ -674,7 +696,6 @@ export class DeliveryService {
     );
   }
 
-  // FEATURE 17: Clean up expired events
   @Cron(CronExpression.EVERY_MINUTE)
   async cleanExpiredEvents(): Promise<void> {
     const now = new Date();

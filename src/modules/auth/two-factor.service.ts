@@ -10,24 +10,13 @@ import { User } from '../users/schemas/user.schema';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
 
-/**
- * Two-Factor Authentication Service — TOTP (RFC 6238)
- *
- * Architecture decisions:
- * - Pure-crypto TOTP implementation (no external totp/speakeasy deps)
- * - Secret encrypted at rest using AES-256-GCM (same pattern as PayloadCrypto)
- * - Recovery codes: 10 one-time codes, bcrypt-hashed individually
- * - Codes are single-use: consumed via atomic $pull
- * - 30-second window with ±1 step tolerance (90s effective window)
- */
 @Injectable()
 export class TwoFactorService {
   private readonly logger = new Logger(TwoFactorService.name);
 
-  /** TOTP constants (RFC 6238) */
-  private readonly TOTP_STEP    = 30;  // seconds
+  private readonly TOTP_STEP    = 30;
   private readonly TOTP_DIGITS  = 6;
-  private readonly TOTP_WINDOW  = 1;   // ±1 step tolerance
+  private readonly TOTP_WINDOW  = 1;
   private readonly RECOVERY_CODE_COUNT = 10;
 
   constructor(
@@ -36,12 +25,6 @@ export class TwoFactorService {
     private auditService: AuditService,
   ) {}
 
-  // ── SETUP FLOW ────────────────────────────────────────────────────────────────
-
-  /**
-   * Step 1: Generate TOTP secret and return setup data.
-   * Does NOT enable 2FA yet — user must verify with a code first.
-   */
   async generateSetup(userId: string): Promise<{
     secret: string;
     otpauthUrl: string;
@@ -54,26 +37,22 @@ export class TwoFactorService {
       throw new BadRequestException('Two-factor authentication is already enabled');
     }
 
-    // Generate 20-byte secret (160-bit, standard for TOTP)
     const secretBuffer = randomBytes(20);
     const secret = this.base32Encode(secretBuffer);
 
-    // Generate recovery codes
     const recoveryCodes = Array.from({ length: this.RECOVERY_CODE_COUNT }, () =>
       randomBytes(5).toString('hex'),
     );
 
-    // Hash recovery codes for storage (SHA256 — fast lookup, codes are high entropy)
     const hashedRecoveryCodes = recoveryCodes.map((code) =>
       createHash('sha256').update(code).digest('hex'),
     );
 
-    // Store encrypted secret + hashed recovery codes (2FA not enabled yet)
     const encryptedSecret = this.encryptSecret(secret);
     await this.userModel.findByIdAndUpdate(userId, {
       twoFactorSecret: encryptedSecret,
       twoFactorRecoveryCodes: hashedRecoveryCodes,
-      // twoFactorEnabled remains false until verify step
+
     });
 
     const issuer = this.config.get('APP_NAME', 'WebhookOS');
@@ -82,15 +61,11 @@ export class TwoFactorService {
     return {
       secret,
       otpauthUrl,
-      qrData: otpauthUrl,  // frontend can render this as QR
+      qrData: otpauthUrl,
       recoveryCodes,
     };
   }
 
-  /**
-   * Step 2: Verify initial TOTP code and enable 2FA.
-   * This confirms the user has correctly set up their authenticator app.
-   */
   async verifyAndEnable(userId: string, code: string, ip: string): Promise<{ message: string }> {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
@@ -117,11 +92,6 @@ export class TwoFactorService {
     return { message: 'Two-factor authentication enabled successfully' };
   }
 
-  // ── DISABLE ───────────────────────────────────────────────────────────────────
-
-  /**
-   * Disable 2FA — requires a valid TOTP code to confirm.
-   */
   async disable(userId: string, code: string, ip: string): Promise<{ message: string }> {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
@@ -150,22 +120,14 @@ export class TwoFactorService {
     return { message: 'Two-factor authentication disabled' };
   }
 
-  // ── LOGIN VERIFICATION ────────────────────────────────────────────────────────
-
-  /**
-   * Validate TOTP code during login flow.
-   * Called after password verification when user has 2FA enabled.
-   */
   async validateLoginCode(userId: string, code: string): Promise<boolean> {
     const user = await this.userModel.findById(userId);
     if (!user || !user.twoFactorEnabled || !user.twoFactorSecret) return false;
 
     const secret = this.decryptSecret(user.twoFactorSecret);
 
-    // Try TOTP first
     if (this.verifyTotp(secret, code)) return true;
 
-    // Try recovery code (single-use — atomic $pull)
     const codeHash = createHash('sha256').update(code).digest('hex');
     const result = await this.userModel.findOneAndUpdate(
       { _id: userId, twoFactorRecoveryCodes: codeHash },
@@ -181,12 +143,6 @@ export class TwoFactorService {
     return false;
   }
 
-  // ── REGENERATE RECOVERY CODES ─────────────────────────────────────────────────
-
-  /**
-   * Generate fresh set of recovery codes. Requires valid TOTP code.
-   * Replaces all existing recovery codes.
-   */
   async regenerateRecoveryCodes(
     userId: string,
     code: string,
@@ -223,8 +179,6 @@ export class TwoFactorService {
     return { recoveryCodes };
   }
 
-  // ── GET 2FA STATUS ────────────────────────────────────────────────────────────
-
   async getStatus(userId: string): Promise<{
     enabled: boolean;
     recoveryCodesRemaining: number;
@@ -237,11 +191,9 @@ export class TwoFactorService {
     };
   }
 
-  // ── TOTP CORE (RFC 6238 / RFC 4226) ──────────────────────────────────────────
-
   private verifyTotp(base32Secret: string, code: string): boolean {
     const now = Math.floor(Date.now() / 1000);
-    // Check current step ± window
+
     for (let i = -this.TOTP_WINDOW; i <= this.TOTP_WINDOW; i++) {
       const counter = Math.floor((now + i * this.TOTP_STEP) / this.TOTP_STEP);
       const expected = this.generateHotp(base32Secret, counter);
@@ -250,12 +202,10 @@ export class TwoFactorService {
     return false;
   }
 
-  /** HOTP (RFC 4226) — the building block of TOTP */
   private generateHotp(base32Secret: string, counter: number): string {
     const { createHmac } = require('crypto');
     const key = this.base32Decode(base32Secret);
 
-    // Counter to 8-byte big-endian buffer
     const buffer = Buffer.alloc(8);
     let tmp = counter;
     for (let i = 7; i >= 0; i--) {
@@ -265,7 +215,6 @@ export class TwoFactorService {
 
     const hmac = createHmac('sha1', key).update(buffer).digest();
 
-    // Dynamic truncation (RFC 4226 §5.3)
     const offset = hmac[hmac.length - 1] & 0x0f;
     const binary =
       ((hmac[offset] & 0x7f) << 24) |
@@ -276,8 +225,6 @@ export class TwoFactorService {
     const otp = binary % 10 ** this.TOTP_DIGITS;
     return otp.toString().padStart(this.TOTP_DIGITS, '0');
   }
-
-  // ── BASE32 ENCODING/DECODING ──────────────────────────────────────────────────
 
   private base32Encode(buffer: Buffer): string {
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ234567';
@@ -317,8 +264,6 @@ export class TwoFactorService {
     return Buffer.from(output);
   }
 
-  // ── SECRET ENCRYPTION AT REST ─────────────────────────────────────────────────
-
   private getEncryptionKey(): Buffer {
     const keyHex = this.config.get<string>('TWO_FACTOR_ENCRYPTION_KEY') ||
                    this.config.get<string>('PAYLOAD_ENCRYPTION_KEY') ||
@@ -336,7 +281,7 @@ export class TwoFactorService {
   }
 
   private decryptSecret(ciphertext: string): string {
-    if (!ciphertext.startsWith('2fa:')) return ciphertext; // legacy unencrypted
+    if (!ciphertext.startsWith('2fa:')) return ciphertext;
     const [, ivHex, tagHex, dataHex] = ciphertext.split(':');
     const key = this.getEncryptionKey();
     const decipher = createDecipheriv('aes-256-gcm', key, Buffer.from(ivHex, 'hex'));

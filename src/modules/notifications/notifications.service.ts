@@ -18,7 +18,7 @@ export class NotificationsService {
   async sendAlert(alert: AlertPayload): Promise<void> {
     await Promise.allSettled([
       this.sendSlack(alert),
-      // this.sendEmail(alert), // plug in SendGrid/SES when ready
+
     ]);
   }
 

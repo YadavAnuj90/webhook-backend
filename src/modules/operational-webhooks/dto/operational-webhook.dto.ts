@@ -1,13 +1,14 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsUrl, IsArray,
+  IsString, IsNotEmpty, IsOptional, IsArray,
   MaxLength, ArrayMaxSize,
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsSafeUrl } from '../../../common/decorators/is-safe-url.validator';
 
 export class CreateOperationalWebhookDto {
   @ApiProperty({ example: 'https://my-server.com/system-events' })
-  @IsUrl({ protocols: ['http', 'https'], require_tld: false })
+  @IsSafeUrl()
   url: string;
 
   @ApiProperty({ example: ['delivery.success', 'delivery.failed'], type: [String] })

@@ -1,21 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { RealtimeGateway } from './realtime.gateway';
 
-/**
- * RealtimeService — decoupled bridge between delivery pipeline and WebSocket clients.
- *
- * This service is injected into DeliveryService, keeping the gateway logic
- * separate from delivery logic. If no WebSocket clients are connected,
- * emits are no-ops (fire-and-forget).
- *
- * Event types:
- *   delivery:success     — event successfully delivered
- *   delivery:failed      — delivery attempt failed (retrying)
- *   delivery:dead        — event exhausted retries → DLQ
- *   delivery:retry       — event scheduled for retry
- *   delivery:filtered    — event filtered out by rules
- *   delivery:rate_queued — event queued for drip-delivery
- */
 @Injectable()
 export class RealtimeService {
   private readonly logger = new Logger(RealtimeService.name);

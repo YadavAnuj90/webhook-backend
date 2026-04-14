@@ -1,25 +1,14 @@
-/**
- * AiProviderService (exported as GeminiService for backwards-compat)
- *
- * Priority:  DeepSeek  →  Gemini
- * Auto-detects which API key is configured and routes accordingly.
- * Both providers expose the same public interface:
- *   ask(prompt, temperature?)        → string
- *   askJson<T>(prompt, temperature?) → T
- */
+
 import { Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import axios from 'axios';
 
-// ─── DeepSeek (OpenAI-compatible) ────────────────────────────────────────────
 const DEEPSEEK_BASE    = 'https://api.deepseek.com';
-const DEEPSEEK_MODEL   = 'deepseek-chat';          // DeepSeek-V3 — best for structured JSON
+const DEEPSEEK_MODEL   = 'deepseek-chat';
 
-// ─── Gemini ───────────────────────────────────────────────────────────────────
 const GEMINI_BASE      = 'https://generativelanguage.googleapis.com/v1beta/models';
 const GEMINI_MODEL     = 'gemini-2.0-flash';
 
-// ─── Keep old export name so ai.service.ts needs no changes ──────────────────
 export { AiProviderService as GeminiService };
 
 @Injectable()
@@ -28,7 +17,6 @@ export class AiProviderService {
 
   constructor(private readonly config: ConfigService) {}
 
-  // ── Which provider is active? ──────────────────────────────────────────────
   get provider(): 'deepseek' | 'gemini' | 'none' {
     if (this.config.get<string>('DEEPSEEK_API_KEY')) return 'deepseek';
     if (this.config.get<string>('GEMINI_API_KEY'))   return 'gemini';
@@ -49,9 +37,6 @@ export class AiProviderService {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Plain text response
-  // ═══════════════════════════════════════════════════════════════════════════
   async ask(prompt: string, temperature = 0.3): Promise<string> {
     this.assertConfigured();
     return this.provider === 'deepseek'
@@ -59,9 +44,6 @@ export class AiProviderService {
       : this.geminiAsk(prompt, temperature);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // JSON-mode response — returns parsed typed object
-  // ═══════════════════════════════════════════════════════════════════════════
   async askJson<T = any>(prompt: string, temperature = 0.2): Promise<T> {
     this.assertConfigured();
     return this.provider === 'deepseek'
@@ -69,9 +51,6 @@ export class AiProviderService {
       : this.geminiAskJson<T>(prompt, temperature);
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // DeepSeek implementation (OpenAI-compatible)
-  // ═══════════════════════════════════════════════════════════════════════════
   private async deepseekAsk(prompt: string, temperature: number): Promise<string> {
     const key = this.config.get<string>('DEEPSEEK_API_KEY')!;
     try {
@@ -112,7 +91,7 @@ export class AiProviderService {
           ],
           temperature,
           max_tokens: 8192,
-          response_format: { type: 'json_object' },  // DeepSeek native JSON mode
+          response_format: { type: 'json_object' },
           stream: false,
         },
         {
@@ -128,9 +107,6 @@ export class AiProviderService {
     }
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // Gemini implementation (fallback)
-  // ═══════════════════════════════════════════════════════════════════════════
   private async geminiAsk(prompt: string, temperature: number): Promise<string> {
     const key = this.config.get<string>('GEMINI_API_KEY')!;
     const url  = `${GEMINI_BASE}/${GEMINI_MODEL}:generateContent?key=${key}`;
@@ -167,7 +143,6 @@ export class AiProviderService {
     }
   }
 
-  // ─── helpers ───────────────────────────────────────────────────────────────
   private stripFences(raw: string): string {
     return raw.replace(/^```(?:json)?\n?/i, '').replace(/\n?```$/i, '').trim();
   }

@@ -20,7 +20,6 @@ export class AiController {
     private readonly provider: AiProviderService,
   ) {}
 
-  // ── Provider status (frontend uses this to show active AI badge) ────────────
   @Get('status')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: '🤖 Get active AI provider status (Gemini / DeepSeek / none)' })
@@ -37,11 +36,6 @@ export class AiController {
       },
     };
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 1. Natural Language Webhook Debugger
-  // POST /api/v1/ai/projects/:projectId/debug
-  // ═══════════════════════════════════════════════════════════════════════════
 
   @Post('projects/:projectId/debug')
   @HttpCode(HttpStatus.OK)
@@ -81,11 +75,6 @@ Gemini analyzes your last 80 delivery logs and returns a root cause + action pla
     });
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 2. AI Schema Generator
-  // POST /api/v1/ai/projects/:projectId/generate-schema
-  // ═══════════════════════════════════════════════════════════════════════════
-
   @Post('projects/:projectId/generate-schema')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -121,11 +110,6 @@ Gemini analyzes your last 80 delivery logs and returns a root cause + action pla
     });
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 3. Smart DLQ Triage
-  // POST /api/v1/ai/projects/:projectId/triage-dlq
-  // ═══════════════════════════════════════════════════════════════════════════
-
   @Post('projects/:projectId/triage-dlq')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({
@@ -146,12 +130,6 @@ Also returns: overall DLQ health summary, quick wins, and estimated recovery rat
   triageDlq(@Param('projectId') projectId: string) {
     return this.ai.triageDlq(projectId);
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // 4. PII Auto-Detector
-  // POST /api/v1/ai/detect-pii
-  // POST /api/v1/ai/projects/:projectId/endpoints/:endpointId/detect-pii
-  // ═══════════════════════════════════════════════════════════════════════════
 
   @Post('detect-pii')
   @HttpCode(HttpStatus.OK)

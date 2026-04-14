@@ -60,20 +60,14 @@ export class Invoice extends Document {
 
 export const InvoiceSchema = SchemaFactory.createForClass(Invoice);
 
-// invoiceNumber unique from @Prop(unique:true)
-
-// User billing history
 InvoiceSchema.index({ userId: 1, createdAt: -1 }, { name: 'idx_user_time' });
 
-// User filtered by status (open invoices)
 InvoiceSchema.index({ userId: 1, status: 1 }, { name: 'idx_user_status' });
 
-// Overdue invoices cron: open + pastDue date
 InvoiceSchema.index(
   { status: 1, dueDate: 1 },
   { partialFilterExpression: { status: 'open' }, name: 'idx_open_due_partial' },
 );
 
-// Reseller / customer revenue dashboards
 InvoiceSchema.index({ resellerId: 1, createdAt: -1 }, { sparse: true, name: 'idx_reseller_time' });
 InvoiceSchema.index({ customerId: 1, createdAt: -1 }, { sparse: true, name: 'idx_customer_time' });

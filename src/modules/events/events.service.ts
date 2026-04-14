@@ -37,12 +37,13 @@ export class EventsService {
     },
     endpointDeduplicationWindowSecs = 0,
     userId?: string,
+    requestId?: string | null,
   ) {
-    // ── Monthly event quota check ────────────────────────────────────────────
+
     if (userId) {
       const sub = await this.subModel.findOne({ userId });
       if (sub && sub.eventsPerMonth > 0) {
-        // Count events in current calendar month
+
         const monthStart = new Date(); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
         const monthCount = await this.eventModel.countDocuments({ projectId, createdAt: { $gte: monthStart } });
         if (monthCount >= sub.eventsPerMonth) {
@@ -57,14 +58,12 @@ export class EventsService {
       dto.idempotencyKey ||
       `${Date.now()}-${Math.random().toString(36).slice(2)}`;
 
-    // 1. Permanent idempotency key check
     const existing = await this.eventModel.findOne({
       idempotencyKey,
       endpointId,
     });
     if (existing) return { id: existing.id, status: existing.status, duplicate: true };
 
-    // 2. Time-window deduplication (uses payload hash if no explicit key)
     const windowSecs =
       dto.deduplicationWindowSecs ?? endpointDeduplicationWindowSecs ?? 0;
     if (windowSecs > 0) {
@@ -85,26 +84,22 @@ export class EventsService {
         };
     }
 
-    // 3. Load endpoint and event type for metadata
     const endpoint = await this.endpointModel.findById(endpointId);
     const eventType = await this.eventTypeModel.findOne({
       projectId,
       name: dto.eventType,
     });
 
-    // 4. FEATURE 4: Scrub PII before storage
     let payloadToStore = dto.payload;
     if (endpoint?.piiFields && endpoint.piiFields.length > 0) {
       payloadToStore = PiiScrubber.scrub(dto.payload, endpoint.piiFields);
     }
 
-    // 5. FEATURE 5: Encrypt payload if enabled
     let encryptedPayload: any = payloadToStore;
     if (PayloadCrypto.isEnabled()) {
       encryptedPayload = PayloadCrypto.encrypt(JSON.stringify(payloadToStore));
     }
 
-    // 6. FEATURE 17: Set TTL if event type has default
     const expiresAt = eventType?.defaultTtlSeconds
       ? new Date(Date.now() + eventType.defaultTtlSeconds * 1000)
       : null;
@@ -117,13 +112,13 @@ export class EventsService {
       idempotencyKey,
       priority: dto.priority || 'p2',
       expiresAt,
+      requestId: requestId ?? null,
     });
 
-    // 7. FEATURE 1: Map priority to Bull queue priority
     const priorityMap = { p0: 1, p1: 2, p2: 3, p3: 4 };
     const bullPriority = priorityMap[dto.priority || 'p2'] || 3;
 
-    await this.webhookQueue.add('deliver', { eventId: event.id }, {
+    await this.webhookQueue.add('deliver', { eventId: event.id, requestId: requestId ?? null }, {
       attempts: 1,
       removeOnComplete: true,
       priority: bullPriority,
@@ -136,12 +131,37 @@ export class EventsService {
     const filter: any = { projectId };
     if (status) filter.status = status;
     if (endpointId) filter.endpointId = endpointId;
-    const skip = (page - 1) * limit;
+    const size = Math.max(1, Math.min(200, Math.floor(limit)));
+    const skip = (Math.max(1, page) - 1) * size;
+
+    const hintedCount = this.eventModel
+      .countDocuments(filter)
+      .hint({ projectId: 1, createdAt: -1 } as any)
+      .catch(() => this.eventModel.countDocuments(filter));
     const [events, total] = await Promise.all([
-      this.eventModel.find(filter).sort({ createdAt: -1 }).skip(skip).limit(limit),
-      this.eventModel.countDocuments(filter),
+      this.eventModel.find(filter).sort({ createdAt: -1, _id: -1 }).skip(skip).limit(size).lean(),
+      hintedCount,
     ]);
-    return { events, total, page, limit };
+    return { events, total, page, limit: size };
+  }
+
+  async findAllCursor(
+    projectId: string,
+    opts: { cursor?: string; limit?: number; status?: EventStatus; endpointId?: string } = {},
+  ) {
+
+    const { cursorPaginate } = await import('../../common/pagination/cursor');
+    const filter: any = { projectId };
+    if (opts.status) filter.status = opts.status;
+    if (opts.endpointId) filter.endpointId = opts.endpointId;
+    return cursorPaginate({
+      model: this.eventModel as any,
+      filter,
+      sortField: 'createdAt',
+      sortOrder: -1,
+      cursor: opts.cursor,
+      limit: opts.limit ?? 20,
+    });
   }
 
   async findOne(id: string, projectId: string) {
@@ -168,7 +188,6 @@ export class EventsService {
       : event.lastResponse ?? null;
     const obj = event.toObject() as any;
 
-    // FEATURE 5: Decrypt payload if encrypted
     if (
       typeof obj.payload === 'string' &&
       obj.payload.startsWith('enc:')
@@ -185,7 +204,11 @@ export class EventsService {
     const event = await this.eventModel.findOne({ _id: id, projectId });
     if (!event) throw new NotFoundException('Event not found');
     await this.eventModel.findByIdAndUpdate(id, { status: EventStatus.PENDING, retryCount: 0, nextRetryAt: null });
-    await this.webhookQueue.add('deliver', { eventId: id }, { attempts: 1, removeOnComplete: true });
+    await this.webhookQueue.add(
+      'deliver',
+      { eventId: id, requestId: (event as any).requestId ?? null },
+      { attempts: 1, removeOnComplete: true },
+    );
     return { message: 'Event queued for replay' };
   }
 
@@ -213,7 +236,7 @@ export class EventsService {
         });
         await this.webhookQueue.add(
           'deliver',
-          { eventId: e.id },
+          { eventId: e.id, requestId: (e as any).requestId ?? null },
           { attempts: 1, removeOnComplete: true },
         );
       }),
@@ -221,7 +244,6 @@ export class EventsService {
     return { message: `${dead.length} events queued for replay` };
   }
 
-  // FEATURE 6: GDPR Right-to-Erasure
   async eraseByCustomerId(
     projectId: string,
     customerId: string,

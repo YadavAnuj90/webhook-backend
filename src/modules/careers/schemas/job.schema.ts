@@ -1,8 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-// ─── Enums ───────────────────────────────────────────────────────────────────
-
 export enum JobStatus {
   DRAFT      = 'draft',
   OPEN       = 'open',
@@ -37,8 +35,6 @@ export enum ExperienceLevel {
   STAFF    = 'staff',
 }
 
-// ─── Schema ──────────────────────────────────────────────────────────────────
-
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -49,24 +45,23 @@ export class Job extends Document {
   @Prop({ required: true })                                  title: string;
   @Prop({ required: true, unique: true, lowercase: true })   slug: string;
   @Prop({ required: true, enum: JobDepartment })             department: JobDepartment;
-  @Prop({ required: true })                                  location: string;      // "Remote" | "Bangalore" | "Hybrid — Bangalore"
+  @Prop({ required: true })                                  location: string;
   @Prop({ required: true, enum: JobType })                   type: JobType;
   @Prop({ required: true, enum: ExperienceLevel })           experience: ExperienceLevel;
-  @Prop({ default: '' })                                     salaryRange: string;   // "₹8L – ₹15L" or empty
-  @Prop({ required: true })                                  shortDescription: string;  // 1-2 line teaser for cards
-  @Prop({ required: true })                                  description: string;       // full markdown/HTML body
+  @Prop({ default: '' })                                     salaryRange: string;
+  @Prop({ required: true })                                  shortDescription: string;
+  @Prop({ required: true })                                  description: string;
   @Prop({ type: [String], default: [] })                     requirements: string[];
   @Prop({ type: [String], default: [] })                     niceToHave: string[];
   @Prop({ type: [String], default: [] })                     perks: string[];
   @Prop({ default: JobStatus.DRAFT, enum: JobStatus })       status: JobStatus;
   @Prop({ type: Date, default: null })                       publishedAt: Date | null;
   @Prop({ default: 0 })                                      applicationCount: number;
-  @Prop({ required: true })                                  postedBy: string;          // userId of super_admin
+  @Prop({ required: true })                                  postedBy: string;
 }
 
 export const JobSchema = SchemaFactory.createForClass(Job);
 
-// ─── Indexes ─────────────────────────────────────────────────────────────────
 JobSchema.index({ slug: 1 },                     { unique: true, name: 'uq_slug' });
 JobSchema.index({ status: 1, department: 1 },     { name: 'idx_status_dept' });
 JobSchema.index({ status: 1, publishedAt: -1 },   { name: 'idx_status_published' });

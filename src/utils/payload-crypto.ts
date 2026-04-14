@@ -2,49 +2,53 @@ import { createCipheriv, createDecipheriv, randomBytes, createHash } from 'crypt
 
 const ALGO = 'aes-256-gcm';
 
-/**
- * AES-256-GCM envelope for sensitive fields at rest.
- *
- * Key resolution (PAYLOAD_ENCRYPTION_KEY, in order):
- *   1. 64 hex chars  → 32 raw bytes
- *   2. base64 that decodes to exactly 32 bytes → use as-is
- *   3. any other string ≥ 32 chars            → SHA-256 derive (stable, idempotent)
- *   4. string < 32 chars                      → HARD FAIL (don't silently zero-pad)
- *
- * If the env var is unset, encryption is transparently disabled
- * (encrypt/decrypt act as identity) so dev environments still work.
- */
 export class PayloadCrypto {
-  private static cachedKey: Buffer | null | undefined = undefined; // tri-state
+  private static cachedKey: Buffer | null | undefined = undefined;
+  private static cachedPrevKey: Buffer | null | undefined = undefined;
 
-  private static resolveKey(): Buffer | null {
-    if (this.cachedKey !== undefined) return this.cachedKey;
-    const raw = process.env.PAYLOAD_ENCRYPTION_KEY;
-    if (!raw) { this.cachedKey = null; return null; }
+  private static parseKey(raw: string | undefined | null): Buffer | null {
+    if (!raw) return null;
 
-    // 1. hex (64 chars)
-    if (/^[0-9a-fA-F]{64}$/.test(raw)) {
-      this.cachedKey = Buffer.from(raw, 'hex');
-      return this.cachedKey;
-    }
-    // 2. base64 decoding to 32 bytes
+    if (/^[0-9a-fA-F]{64}$/.test(raw)) return Buffer.from(raw, 'hex');
+
     try {
       const b = Buffer.from(raw, 'base64');
       if (b.length === 32 && b.toString('base64').replace(/=+$/, '') === raw.replace(/=+$/, '')) {
-        this.cachedKey = b;
         return b;
       }
-    } catch { /* ignore */ }
-    // 3. derive from high-entropy long secret
-    if (raw.length >= 32) {
-      this.cachedKey = createHash('sha256').update(raw, 'utf8').digest();
-      return this.cachedKey;
-    }
-    // 4. refuse weak keys outright
+    } catch {  }
+
+    if (raw.length >= 32) return createHash('sha256').update(raw, 'utf8').digest();
+
     throw new Error(
-      'PAYLOAD_ENCRYPTION_KEY is set but too weak. Provide 64 hex chars (32 bytes), ' +
+      'Encryption key is set but too weak. Provide 64 hex chars (32 bytes), ' +
       'a base64 string that decodes to 32 bytes, or ≥32 chars of high-entropy secret.',
     );
+  }
+
+  private static resolveKey(): Buffer | null {
+    if (this.cachedKey !== undefined) return this.cachedKey;
+    this.cachedKey = this.parseKey(process.env.PAYLOAD_ENCRYPTION_KEY) ?? null;
+    return this.cachedKey;
+  }
+
+  private static resolvePrevKey(): Buffer | null {
+    if (this.cachedPrevKey !== undefined) return this.cachedPrevKey;
+    this.cachedPrevKey = this.parseKey(process.env.PAYLOAD_ENCRYPTION_KEY_PREVIOUS) ?? null;
+    return this.cachedPrevKey;
+  }
+
+  private static currentVersion(): string {
+    return process.env.PAYLOAD_ENCRYPTION_KEY_VERSION || 'v1';
+  }
+
+  private static previousVersion(): string {
+    return process.env.PAYLOAD_ENCRYPTION_KEY_PREVIOUS_VERSION || 'v0';
+  }
+
+  static resetKeyCache(): void {
+    this.cachedKey = undefined;
+    this.cachedPrevKey = undefined;
   }
 
   static isEnabled(): boolean {
@@ -58,21 +62,70 @@ export class PayloadCrypto {
     const cipher = createCipheriv(ALGO, key, iv);
     const encrypted = Buffer.concat([cipher.update(plaintext, 'utf8'), cipher.final()]);
     const tag = cipher.getAuthTag();
-    return `enc:${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
+
+    return `enc:${this.currentVersion()}:${iv.toString('hex')}:${tag.toString('hex')}:${encrypted.toString('hex')}`;
   }
 
   static decrypt(ciphertext: string): string {
     if (!ciphertext || !ciphertext.startsWith('enc:')) return ciphertext;
-    const key = this.resolveKey();
-    if (!key) return ciphertext;
-    const [, ivHex, tagHex, dataHex] = ciphertext.split(':');
+    const parts = ciphertext.split(':');
+
+    let version: string | null = null;
+    let ivHex: string | undefined, tagHex: string | undefined, dataHex: string | undefined;
+
+    if (parts.length === 5) {
+      [, version, ivHex, tagHex, dataHex] = parts;
+    } else if (parts.length === 4) {
+      [, ivHex, tagHex, dataHex] = parts;
+    } else {
+      return ciphertext;
+    }
     if (!ivHex || !tagHex || !dataHex) return ciphertext;
-    const decipher = createDecipheriv(ALGO, key, Buffer.from(ivHex, 'hex'));
-    decipher.setAuthTag(Buffer.from(tagHex, 'hex'));
-    return decipher.update(Buffer.from(dataHex, 'hex')).toString('utf8') + decipher.final('utf8');
+
+    const currentKey = this.resolveKey();
+    const prevKey    = this.resolvePrevKey();
+
+    const pickKey = (): Buffer | null => {
+      if (!version) return prevKey ?? currentKey;
+      if (version === this.currentVersion()) return currentKey;
+      if (prevKey && version === this.previousVersion()) return prevKey;
+
+      return currentKey ?? prevKey ?? null;
+    };
+
+    const primary = pickKey();
+    if (!primary) return ciphertext;
+
+    const tryDecrypt = (key: Buffer): string | null => {
+      try {
+        const decipher = createDecipheriv(ALGO, key, Buffer.from(ivHex!, 'hex'));
+        decipher.setAuthTag(Buffer.from(tagHex!, 'hex'));
+        return decipher.update(Buffer.from(dataHex!, 'hex')).toString('utf8') + decipher.final('utf8');
+      } catch {
+        return null;
+      }
+    };
+
+    const first = tryDecrypt(primary);
+    if (first !== null) return first;
+
+    const secondary = primary === currentKey ? prevKey : currentKey;
+    if (secondary) {
+      const second = tryDecrypt(secondary);
+      if (second !== null) return second;
+    }
+
+    throw new Error('payload decryption failed: no configured key could decrypt this ciphertext');
   }
 
-  /** Convenience for optional fields. */
+  static isCurrent(ciphertext: string): boolean {
+    if (!ciphertext || !ciphertext.startsWith('enc:')) return true;
+    const parts = ciphertext.split(':');
+    if (parts.length === 4) return false;
+    if (parts.length === 5) return parts[1] === this.currentVersion();
+    return false;
+  }
+
   static encryptMaybe(v: string | null | undefined): string | null {
     if (v === null || v === undefined || v === '') return (v as any) ?? null;
     return this.encrypt(v);

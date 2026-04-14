@@ -4,19 +4,12 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { User } from '../users/schemas/user.schema';
 
-/**
- * Clears out expired one-time tokens (password reset + email verification)
- * and stale refresh-token sessions.  Prevents the users collection from
- * accumulating dead token material that no longer serves a purpose and
- * could, in the worst case, be a weak link for offline cracking attempts.
- */
 @Injectable()
 export class AuthSweeperService {
   private readonly logger = new Logger(AuthSweeperService.name);
 
   constructor(@InjectModel(User.name) private userModel: Model<User>) {}
 
-  /** Every 15 minutes: strip expired password-reset tokens. */
   @Cron(CronExpression.EVERY_30_MINUTES)
   async purgeExpiredPasswordResetTokens() {
     const now = new Date();
@@ -29,10 +22,6 @@ export class AuthSweeperService {
     }
   }
 
-  /**
-   * Daily: purge email-verification tokens older than VERIFY_TOKEN_TTL_DAYS (default 14).
-   * Users who don't verify in that window must request a fresh token.
-   */
   @Cron(CronExpression.EVERY_DAY_AT_3AM)
   async purgeStaleVerifyTokens() {
     const days = parseInt(process.env.VERIFY_TOKEN_TTL_DAYS || '14', 10);
@@ -50,11 +39,6 @@ export class AuthSweeperService {
     }
   }
 
-  /**
-   * Hourly: drop refresh-token sessions whose `lastUsed` is older than
-   * REFRESH_TOKEN_TTL_DAYS (default 30) — an inactive session is effectively
-   * expired and should not linger in the user document.
-   */
   @Cron(CronExpression.EVERY_HOUR)
   async purgeStaleSessions() {
     const days = parseInt(process.env.REFRESH_TOKEN_TTL_DAYS || '30', 10);

@@ -1,7 +1,7 @@
-import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Delete, Body, Param, Query, UseGuards, Req } from '@nestjs/common';
 import {
   ApiTags, ApiBearerAuth, ApiOperation,
-  ApiResponse, ApiParam, ApiQuery, ApiBody,
+  ApiResponse, ApiParam, ApiQuery, ApiBody, ApiHeader,
 } from '@nestjs/swagger';
 import { AuthGuard } from '@nestjs/passport';
 import { EventsService } from './events.service';
@@ -10,13 +10,8 @@ import { SendEventToEndpointDto } from './dto/send-event.dto';
 import { ProjectAccessGuard } from '../../common/guards/project-access.guard';
 import { PermissionGuard, RequirePermission } from '../permissions/permissions.guard';
 import { Resource, Action } from '../permissions/permissions.constants';
+import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
 
-/**
- * EventsController — resource-scoped RBAC via ProjectAccessGuard.
- *
- * Guard chain: JWT → ProjectAccessGuard (resolves role) → PermissionGuard (checks permission)
- * Super admin bypasses all checks via god-mode in both guards.
- */
 @ApiTags('Events')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'), ProjectAccessGuard, PermissionGuard)
@@ -28,10 +23,19 @@ export class EventsController {
   @RequirePermission(Resource.EVENTS, Action.CREATE)
   @ApiOperation({ summary: 'Send a webhook event to a specific endpoint' })
   @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
-  @ApiBody({ schema: { required: ['endpointId', 'eventType', 'payload'], properties: { endpointId: { type: 'string' }, eventType: { type: 'string', example: 'payment.success' }, payload: { type: 'object' }, idempotencyKey: { type: 'string', description: 'Optional deduplication key' } } } })
+  @ApiHeader({ name: 'Idempotency-Key', required: false, description: 'Deduplication key; supersedes body.idempotencyKey when both present is absent' })
+  @ApiBody({ schema: { required: ['endpointId', 'eventType', 'payload'], properties: { endpointId: { type: 'string' }, eventType: { type: 'string', example: 'payment.success' }, payload: { type: 'object' }, idempotencyKey: { type: 'string', description: 'Optional deduplication key (prefer Idempotency-Key header)' } } } })
   @ApiResponse({ status: 201, description: 'Event queued for delivery' })
-  send(@Param('projectId') projectId: string, @Body() dto: SendEventToEndpointDto) {
-    return this.eventsService.send(projectId, dto.endpointId as string, dto);
+  send(
+    @Param('projectId') projectId: string,
+    @Body() dto: SendEventToEndpointDto,
+    @Req() req: any,
+    @IdempotencyKey() headerKey?: string,
+  ) {
+
+    if (!dto.idempotencyKey && headerKey) dto.idempotencyKey = headerKey;
+    const requestId = req?.requestId || (req?.headers?.['x-request-id'] as string) || null;
+    return this.eventsService.send(projectId, dto.endpointId as string, dto, 0, undefined, requestId);
   }
 
   @Get()
@@ -44,6 +48,24 @@ export class EventsController {
   @ApiQuery({ name: 'endpointId', required: false, type: String })
   findAll(@Param('projectId') projectId: string, @Query('page') page = 1, @Query('limit') limit = 20, @Query('status') status?: EventStatus, @Query('endpointId') endpointId?: string) {
     return this.eventsService.findAll(projectId, +page, +limit, status, endpointId);
+  }
+
+  @Get('cursor')
+  @RequirePermission(Resource.EVENTS, Action.READ)
+  @ApiOperation({ summary: 'Cursor-paginated event list — use for deep scrolls / exports' })
+  @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
+  @ApiQuery({ name: 'cursor', required: false, type: String, description: 'Opaque cursor from previous page' })
+  @ApiQuery({ name: 'limit', required: false, type: Number, example: 50 })
+  @ApiQuery({ name: 'status', required: false, enum: EventStatus })
+  @ApiQuery({ name: 'endpointId', required: false, type: String })
+  findAllCursor(
+    @Param('projectId') projectId: string,
+    @Query('cursor') cursor?: string,
+    @Query('limit') limit = 50,
+    @Query('status') status?: EventStatus,
+    @Query('endpointId') endpointId?: string,
+  ) {
+    return this.eventsService.findAllCursor(projectId, { cursor, limit: +limit, status, endpointId });
   }
 
   @Get('dlq')

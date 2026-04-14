@@ -15,7 +15,6 @@ export class AnalyticsService {
     @InjectModel(DeliveryLog.name) private deliveryLogModel: Model<DeliveryLog>,
   ) {}
 
-  // ─── Record a delivery event ──────────────────────────────────────────────
   async record(params: {
     projectId: string;
     endpointId: string;
@@ -63,7 +62,6 @@ export class AnalyticsService {
     );
   }
 
-  // ─── Time-series query ────────────────────────────────────────────────────
   async getTimeSeries(params: {
     projectId: string;
     endpointId?: string;
@@ -123,7 +121,6 @@ export class AnalyticsService {
     }));
   }
 
-  // ─── Summary stats ────────────────────────────────────────────────────────
   async getSummary(projectId: string, endpointId?: string, days = 30) {
     const from = new Date(Date.now() - days * 86_400_000);
     const match: any = { projectId, bucketHour: { $gte: from } };
@@ -165,7 +162,6 @@ export class AnalyticsService {
     };
   }
 
-  // ─── Event type breakdown ─────────────────────────────────────────────────
   async getEventTypeBreakdown(projectId: string, endpointId?: string, days = 7) {
     const from = new Date(Date.now() - days * 86_400_000);
     const match: any = { projectId, bucketHour: { $gte: from } };
@@ -185,7 +181,6 @@ export class AnalyticsService {
       .sort((a, b) => b.count - a.count);
   }
 
-  // ─── Helpers ──────────────────────────────────────────────────────────────
   private truncateToHour(date: Date): Date {
     const d = new Date(date);
     d.setMinutes(0, 0, 0);
@@ -208,9 +203,8 @@ export class AnalyticsService {
     };
   }
 
-  // FEATURE 9: Delivery Heatmap API
   async getHeatmap(projectId: string) {
-    // MongoDB aggregation: group DeliveryLog by dayOfWeek + hour
+
     const raw = await this.deliveryLogModel.aggregate([
       { $match: { projectId } },
       {
@@ -230,7 +224,6 @@ export class AnalyticsService {
       },
     ]);
 
-    // Build 7x24 matrix
     const matrix = Array.from({ length: 7 }, () =>
       Array(24).fill({ total: 0, success: 0, failed: 0 }),
     );

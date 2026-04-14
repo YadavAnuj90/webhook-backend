@@ -6,8 +6,6 @@ import { WebhookEvent, EventStatus } from '../events/schemas/event.schema';
 import { DeliveryLog } from '../delivery/schemas/delivery-log.schema';
 import { Endpoint } from '../endpoints/schemas/endpoint.schema';
 
-// ─── Response Types ───────────────────────────────────────────────────────────
-
 export interface DebugAnswer {
   question: string;
   answer: string;
@@ -54,8 +52,6 @@ export interface PiiDetectionResult {
   applied?: boolean;
 }
 
-// ─── Service ──────────────────────────────────────────────────────────────────
-
 @Injectable()
 export class AiService {
   private readonly logger = new Logger(AiService.name);
@@ -66,10 +62,6 @@ export class AiService {
     @InjectModel(DeliveryLog.name)  private logModel:   Model<DeliveryLog>,
     @InjectModel(Endpoint.name)     private endpointModel: Model<Endpoint>,
   ) {}
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FEATURE 1 — Natural Language Webhook Debugger
-  // ═══════════════════════════════════════════════════════════════════════════
 
   async debugWebhooks(
     projectId: string,
@@ -149,10 +141,6 @@ Respond ONLY as valid JSON:
     };
   }
 
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FEATURE 2 — AI Schema Generator
-  // ═══════════════════════════════════════════════════════════════════════════
-
   async generateSchema(
     projectId: string,
     samplePayload: Record<string, any>,
@@ -195,10 +183,6 @@ Respond ONLY as valid JSON:
       tags:                 result.tags                 || [],
     };
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FEATURE 3 — Smart DLQ Triage
-  // ═══════════════════════════════════════════════════════════════════════════
 
   async triageDlq(projectId: string): Promise<DlqTriageReport> {
     const deadEvents = await this.eventModel
@@ -307,10 +291,6 @@ Respond ONLY as valid JSON:
       estimatedRecoveryRate: result.estimatedRecoveryRate ?? 0,
     };
   }
-
-  // ═══════════════════════════════════════════════════════════════════════════
-  // FEATURE 4 — PII Auto-Detector
-  // ═══════════════════════════════════════════════════════════════════════════
 
   async detectPii(
     samplePayload: Record<string, any>,

@@ -71,24 +71,20 @@ export class TrialService {
     }
   }
 
-  /** Cron: every hour — expire stale trials & send warning emails */
   @Cron(CronExpression.EVERY_HOUR)
   async expireStaleSubscriptions() {
     const now = new Date();
 
-    // ── Expire trials ──────────────────────────────────────────────────────
     const expiredTrials = await this.subModel.updateMany(
       { status: SubscriptionStatus.TRIAL, trialEndAt: { $lt: now } },
       { $set: { status: SubscriptionStatus.TRIAL_EXPIRED } },
     );
 
-    // ── Expire paid subscriptions ─────────────────────────────────────────
     const expiredSubs = await this.subModel.updateMany(
       { status: SubscriptionStatus.ACTIVE, currentPeriodEnd: { $lt: now } },
       { $set: { status: SubscriptionStatus.PAST_DUE } },
     );
 
-    // ── Send "trial expired" emails ───────────────────────────────────────
     if (expiredTrials.modifiedCount > 0) {
       const justExpired = await this.subModel.find({
         status: SubscriptionStatus.TRIAL_EXPIRED,
@@ -102,9 +98,8 @@ export class TrialService {
       }
     }
 
-    // ── Send "3 days left" warning emails ─────────────────────────────────
     const threeDaysFromNow = new Date(now.getTime() + 3 * 24 * 3600_000);
-    const oneDayBuffer     = new Date(now.getTime() + 25 * 3600_000); // avoid double-send
+    const oneDayBuffer     = new Date(now.getTime() + 25 * 3600_000);
     const soonExpiring = await this.subModel.find({
       status: SubscriptionStatus.TRIAL,
       trialEndAt: { $gte: oneDayBuffer, $lte: threeDaysFromNow },

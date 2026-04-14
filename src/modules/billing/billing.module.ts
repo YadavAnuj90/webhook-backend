@@ -51,7 +51,7 @@ import { AuditModule }              from '../audit/audit.module';
     CreditsService,
     ResellerService,
     BillingEmailService,
-    // Export Mongoose models so other modules can inject them if needed
+
     MongooseModule,
   ],
 })

@@ -14,15 +14,6 @@ export enum OperationalEvent {
   SLA_BREACH         = 'sla.breach',
 }
 
-/**
- * OperationalWebhook — system-event callbacks fired by the delivery pipeline.
- *
- * DBA decisions:
- * - Hot query: { projectId, isActive:true, events:{$in:[eventType]} }
- *   The multikey index on events[] covers the $in lookup.
- * - totalFired updated atomically via $inc; lastFiredAt via $set
- * - Partial index on isActive:true — disabled hooks not touched during delivery
- */
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -41,14 +32,12 @@ export class OperationalWebhook extends Document {
   events: string[];
   @Prop({ default: true })               isActive:    boolean;
   @Prop({ type: String, trim: true }) description: string;
-  @Prop({ type: Date, default: null })   lastFiredAt: Date | null;  // $set atomically
-  @Prop({ default: 0 })                  totalFired:  number;        // $inc atomically
+  @Prop({ type: Date, default: null })   lastFiredAt: Date | null;
+  @Prop({ default: 0 })                  totalFired:  number;
 }
 
 export const OperationalWebhookSchema = SchemaFactory.createForClass(OperationalWebhook);
 
-// DELIVERY HOT PATH: active hooks for a project filtered by event type
-// Multikey index on events[] supports $in queries efficiently
 OperationalWebhookSchema.index(
   { projectId: 1, isActive: 1, events: 1 },
   {
@@ -57,7 +46,6 @@ OperationalWebhookSchema.index(
   },
 );
 
-// Management list: all hooks for a project
 OperationalWebhookSchema.index(
   { projectId: 1 },
   { name: 'idx_project' },

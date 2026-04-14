@@ -5,7 +5,7 @@ import { Reflector } from '@nestjs/core';
 import { TrialService } from '../../modules/billing/trial.service';
 
 export const SKIP_SUBSCRIPTION_CHECK = 'skipSubscriptionCheck';
-/** Decorator: skip subscription check on a route */
+
 export const Public = () => SetMetadata(SKIP_SUBSCRIPTION_CHECK, true);
 
 @Injectable()
@@ -16,7 +16,7 @@ export class SubscriptionGuard implements CanActivate {
   ) {}
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
-    // Allow if route is marked public/skip
+
     const skip = this.reflector.getAllAndOverride<boolean>(SKIP_SUBSCRIPTION_CHECK, [
       ctx.getHandler(),
       ctx.getClass(),
@@ -26,10 +26,8 @@ export class SubscriptionGuard implements CanActivate {
     const req = ctx.switchToHttp().getRequest();
     const user = req.user;
 
-    // No user = let JWT guard handle it; don't double-block
     if (!user) return true;
 
-    // Super admins bypass subscription check
     if (user.role === 'super_admin') return true;
 
     const { allowed, reason } = await this.trialService.isAllowed(user.userId || user.sub || user.id);

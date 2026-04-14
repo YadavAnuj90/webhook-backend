@@ -1,7 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
 
-// ─── Credit Package ───────────────────────────────────────────────────────────
 @Schema({ timestamps: true, versionKey: false })
 export class CreditPackage extends Document {
   @Prop({ required: true }) name:         string;
@@ -12,10 +11,9 @@ export class CreditPackage extends Document {
   @Prop({ default: true })  isActive:     boolean;
   @Prop({ default: 0 })     bonusCredits: number;
   @Prop({ default: 1 })     sortOrder:    number;
-  @Prop({ default: false }) contactSales: boolean; // If true, show "Contact Sales" instead of price
+  @Prop({ default: false }) contactSales: boolean;
 }
 
-// ─── Sales Inquiry (Enterprise "Contact Sales" form submissions) ─────────────
 export enum SalesInquiryStatus {
   PENDING     = 'pending',
   CONTACTED   = 'contacted',
@@ -46,20 +44,10 @@ export const SalesInquirySchema = SchemaFactory.createForClass(SalesInquiry);
 SalesInquirySchema.index({ userId: 1, createdAt: -1 }, { name: 'idx_sales_user_time' });
 SalesInquirySchema.index({ status: 1, createdAt: -1 }, { name: 'idx_sales_status_time' });
 
-// ─── Credit Balance ───────────────────────────────────────────────────────────
-/**
- * DBA: balance is updated atomically via $inc — never read-modify-write.
- *   await CreditBalance.findOneAndUpdate(
- *     { userId },
- *     { $inc: { balance: -amount, lifetimeUsed: amount } },
- *     { new: true, upsert: true }
- *   );
- * lowBalanceAlertAt threshold checked in app after $inc resolves.
- */
 @Schema({ timestamps: true, versionKey: false })
 export class CreditBalance extends Document {
   @Prop({ required: true, unique: true }) userId:            string;
-  @Prop({ default: 0 })                  balance:           number;  // $inc atomically
+  @Prop({ default: 0 })                  balance:           number;
   @Prop({ default: 0 })                  lifetimePurchased: number;
   @Prop({ default: 0 })                  lifetimeUsed:      number;
   @Prop({ default: 0 })                  lifetimeExpired:   number;
@@ -69,14 +57,12 @@ export class CreditBalance extends Document {
   @Prop({ type: Number, default: null }) autoTopUpThreshold: number | null;
 }
 export const CreditBalanceSchema = SchemaFactory.createForClass(CreditBalance);
-// userId unique from @Prop
-// Low-balance alerts: find users near zero
+
 CreditBalanceSchema.index(
   { balance: 1 },
   { partialFilterExpression: { autoTopUpEnabled: true }, name: 'idx_autotopup_partial' },
 );
 
-// ─── Credit Transaction ───────────────────────────────────────────────────────
 export enum CreditTxType {
   PURCHASE   = 'purchase',
   USAGE      = 'usage',
@@ -86,10 +72,6 @@ export enum CreditTxType {
   EXPIRY     = 'expiry',
 }
 
-/**
- * CreditTransaction — append-only ledger.
- * Never update rows; only insert. Balance is derived from CreditBalance doc.
- */
 @Schema({ timestamps: true, versionKey: false })
 export class CreditTransaction extends Document {
   @Prop({ required: true })              userId:          string;
@@ -106,13 +88,10 @@ export class CreditTransaction extends Document {
 }
 export const CreditTransactionSchema = SchemaFactory.createForClass(CreditTransaction);
 
-// User transaction history (billing page)
 CreditTransactionSchema.index({ userId: 1, createdAt: -1 }, { name: 'idx_user_time' });
 
-// Filter by type within user (e.g. show only purchases)
 CreditTransactionSchema.index({ userId: 1, type: 1, createdAt: -1 }, { name: 'idx_user_type_time' });
 
-// Idempotency on Razorpay payment — prevent double-credit on retry
 CreditTransactionSchema.index(
   { razorpayPaymentId: 1 },
   { sparse: true, unique: true, name: 'uq_razorpay_payment' },

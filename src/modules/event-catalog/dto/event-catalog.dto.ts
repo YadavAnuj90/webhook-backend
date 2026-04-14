@@ -1,8 +1,9 @@
 import {
   IsString, IsNotEmpty, IsOptional, IsObject, IsArray,
-  MaxLength, IsUrl,
+  MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsSafeUrl } from '../../../common/decorators/is-safe-url.validator';
 
 export class CreateEventTypeDto {
   @ApiProperty({ example: 'order.created' })
@@ -42,7 +43,7 @@ export class ValidatePayloadDto {
 
 export class ContractTestDto {
   @ApiProperty({ example: 'https://my-server.com/webhooks' })
-  @IsUrl({ protocols: ['http', 'https'], require_tld: false })
+  @IsSafeUrl()
   targetUrl: string;
 
   @ApiPropertyOptional({ description: 'Override payload for the test' })

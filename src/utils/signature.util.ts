@@ -8,7 +8,6 @@ import {
   timingSafeEqual,
 } from 'crypto';
 
-/** Constant-time compare of two hex signatures. Returns false on any length mismatch. */
 function safeEqHex(a: string, b: string): boolean {
   if (!a || !b || a.length !== b.length) return false;
   try {
@@ -22,7 +21,7 @@ function safeEqHex(a: string, b: string): boolean {
 }
 
 export class SignatureUtil {
-  /** HMAC-SHA256 (default) */
+
   static generate(payload: string, secret: string): string {
     const timestamp = Math.floor(Date.now() / 1000);
     const signedPayload = `${timestamp}.${payload}`;
@@ -44,7 +43,6 @@ export class SignatureUtil {
     } catch { return false; }
   }
 
-  /** Generate an Ed25519 key pair. privateKey is stored in the endpoint, publicKey is shared with consumers. */
   static generateEd25519KeyPair(): { privateKey: string; publicKey: string } {
     const { privateKey, publicKey } = generateKeyPairSync('ed25519', {
       privateKeyEncoding: { type: 'pkcs8', format: 'pem' },
@@ -53,7 +51,6 @@ export class SignatureUtil {
     return { privateKey, publicKey };
   }
 
-  /** Sign payload with Ed25519 private key. Returns base64 signature. */
   static generateEd25519(payload: string, privateKeyPem: string): string {
     const timestamp = Math.floor(Date.now() / 1000);
     const signedPayload = `${timestamp}.${payload}`;
@@ -62,7 +59,6 @@ export class SignatureUtil {
     return `t=${timestamp},v2=${sig}`;
   }
 
-  /** Verify Ed25519 signature using public key PEM. */
   static verifyEd25519(payload: string, publicKeyPem: string, signatureHeader: string, toleranceSeconds = 300): boolean {
     try {
       const parts = signatureHeader.split(',');
@@ -73,7 +69,7 @@ export class SignatureUtil {
       if (Math.abs(now - timestamp) > toleranceSeconds) return false;
       const signedPayload = `${timestamp}.${payload}`;
       const publicKey = createPublicKey(publicKeyPem);
-      // verify() is itself constant-time at the EVP level.
+
       return verify(null, Buffer.from(signedPayload), publicKey, Buffer.from(sigB64, 'base64'));
     } catch { return false; }
   }

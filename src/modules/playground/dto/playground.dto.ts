@@ -1,12 +1,13 @@
 import {
-  IsString, IsNotEmpty, IsOptional, IsUrl, IsObject,
+  IsString, IsNotEmpty, IsOptional, IsObject,
   IsNumber, Min, Max, IsIn, MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsSafeUrl } from '../../../common/decorators/is-safe-url.validator';
 
 export class PlaygroundFireDto {
   @ApiProperty({ example: 'https://my-server.com/webhooks' })
-  @IsUrl({ protocols: ['http', 'https'], require_tld: false })
+  @IsSafeUrl()
   url: string;
 
   @ApiProperty({ enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'], example: 'POST' })

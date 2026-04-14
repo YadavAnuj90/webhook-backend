@@ -6,20 +6,12 @@ import { Endpoint } from './schemas/endpoint.schema';
 export interface RateLimitResult {
   allowed: boolean;
   reason?: string;
-  /** If not allowed, delay in ms until the earliest rate window resets */
+
   retryAfterMs?: number;
-  /** Which window was exceeded: 'minute' | 'hour' | 'day' */
+
   limitType?: 'minute' | 'hour' | 'day';
 }
 
-/**
- * Rate-limit check is race-free: we roll the expired windows first with a
- * conditional `$set` guarded by `$expr` on `minuteResetAt < now`, then
- * increment counters atomically and read the resulting document back.
- *
- * This replaces the previous read-then-write pattern which could
- * double-count under concurrent deliveries.
- */
 @Injectable()
 export class EndpointRateLimiterService {
   private readonly logger = new Logger(EndpointRateLimiterService.name);
@@ -29,8 +21,6 @@ export class EndpointRateLimiterService {
   async checkRateLimit(endpointId: string): Promise<RateLimitResult> {
     const now = new Date();
 
-    // Step 1: atomically reset any expired windows.
-    // Using aggregation-pipeline update so each reset is guarded on its own timestamp.
     const reset = await this.endpointModel.findByIdAndUpdate(
       endpointId,
       [
@@ -51,7 +41,6 @@ export class EndpointRateLimiterService {
     if (!reset) return { allowed: false, reason: 'Endpoint not found' };
     const rl = reset.rateLimit;
 
-    // Step 2: enforce caps (post-reset counters)
     if (reset.deliveriesThisMinute >= rl.maxPerMinute) {
       return {
         allowed: false,
@@ -77,8 +66,6 @@ export class EndpointRateLimiterService {
       };
     }
 
-    // Step 3: atomic increment — guarded so we don't blow past the caps
-    // if two callers raced past the check above.
     const inc = await this.endpointModel.findOneAndUpdate(
       {
         _id: endpointId,
@@ -91,7 +78,7 @@ export class EndpointRateLimiterService {
     ).lean();
 
     if (!inc) {
-      // Lost the race — the winning caller just hit a cap. Tell caller to wait.
+
       const nextMinute = new Date(reset.minuteResetAt!).getTime() - now.getTime();
       return {
         allowed: false,

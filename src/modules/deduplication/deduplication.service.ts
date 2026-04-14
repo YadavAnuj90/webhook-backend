@@ -23,15 +23,6 @@ export class DeduplicationService implements OnModuleInit, OnModuleDestroy {
 
   onModuleDestroy() { this.redis?.quit(); }
 
-  /**
-   * Returns true if this is a DUPLICATE (already seen within the window).
-   * Returns false if this is NEW (and records it for future dedup).
-   *
-   * @param projectId   Tenant isolation
-   * @param endpointId  Endpoint isolation
-   * @param key         Dedup key (idempotencyKey or content hash)
-   * @param windowSecs  Dedup window in seconds (0 = no dedup)
-   */
   async isDuplicate(
     projectId: string,
     endpointId: string,
@@ -40,15 +31,11 @@ export class DeduplicationService implements OnModuleInit, OnModuleDestroy {
   ): Promise<boolean> {
     if (!windowSecs || windowSecs <= 0) return false;
     const redisKey = `${projectId}:${endpointId}:${this.hash(key)}`;
-    // NX = only set if Not eXists; returns 'OK' if set, null if already exists
+
     const result = await this.redis.set(redisKey, '1', 'EX', windowSecs, 'NX');
-    return result === null; // null = key already existed = duplicate
+    return result === null;
   }
 
-  /**
-   * Compute a content hash for payload-based deduplication
-   * (when no explicit idempotency key is provided)
-   */
   hashPayload(payload: any): string {
     return this.hash(JSON.stringify(payload));
   }

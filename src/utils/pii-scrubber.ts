@@ -1,8 +1,5 @@
 export class PiiScrubber {
-  /**
-   * Remove or mask fields at dot-notation paths within a nested object.
-   * Modifies a deep clone (does not mutate input).
-   */
+
   static scrub(
     payload: Record<string, any>,
     fields: string[],

@@ -13,10 +13,8 @@ import { User } from '../users/schemas/user.schema';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
 
-// eslint-disable-next-line @typescript-eslint/no-var-requires
 const Razorpay = require('razorpay');
 
-// ─── Built-in system plans ────────────────────────────────────────────────────
 export const SYSTEM_PLANS: Record<string, Partial<Plan>> = {
   trial: {
     name: 'Free Trial', priceMonthly: 0, eventsPerMonth: 5_000,
@@ -63,8 +61,6 @@ export class SubscriptionService {
     });
   }
 
-  // ─── Plans ──────────────────────────────────────────────────────────────────
-
   getSystemPlans() {
     return Object.entries(SYSTEM_PLANS).map(([id, p]) => ({
       id,
@@ -105,8 +101,6 @@ export class SubscriptionService {
     });
   }
 
-  // ─── Current subscription ───────────────────────────────────────────────────
-
   async getMySubscription(userId: string) {
     const sub = await this.subModel.findOne({ userId });
     if (!sub) return { status: 'none', message: 'No subscription found. Contact support.' };
@@ -123,8 +117,6 @@ export class SubscriptionService {
     return { ...sub.toObject(), daysLeft };
   }
 
-  // ─── Create Razorpay order for upgrade ──────────────────────────────────────
-
   async createUpgradeOrder(userId: string, planId: string, ip: string) {
     const planMeta = SYSTEM_PLANS[planId];
     if (!planMeta) throw new BadRequestException(`Unknown plan: ${planId}`);
@@ -134,7 +126,7 @@ export class SubscriptionService {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
 
-    const amount = planMeta.priceMonthly; // already in paise
+    const amount = planMeta.priceMonthly;
 
     const order = await this.razorpay.orders.create({
       amount,
@@ -161,8 +153,6 @@ export class SubscriptionService {
       },
     };
   }
-
-  // ─── Verify upgrade payment & activate subscription ─────────────────────────
 
   async verifyUpgradePayment(userId: string, dto: {
     orderId: string; paymentId: string; signature: string; planId: string;
@@ -195,7 +185,6 @@ export class SubscriptionService {
       { upsert: true, new: true },
     );
 
-    // Also update user.plan for backward compat
     await this.userModel.findByIdAndUpdate(userId, {
       plan: dto.planId,
       subscriptionStartAt: now,
@@ -203,7 +192,6 @@ export class SubscriptionService {
       razorpayPaymentId: dto.paymentId,
     });
 
-    // Generate invoice
     const invoice = await this.generateSubscriptionInvoice(userId, dto.planId, planMeta, dto.paymentId, now, periodEnd);
 
     await this.auditService.log({
@@ -217,8 +205,6 @@ export class SubscriptionService {
       invoice: { id: invoice._id, invoiceNumber: invoice.invoiceNumber },
     };
   }
-
-  // ─── Cancel subscription ─────────────────────────────────────────────────────
 
   async cancelSubscription(userId: string, reason?: string) {
     const sub = await this.subModel.findOne({ userId });
@@ -234,15 +220,13 @@ export class SubscriptionService {
     return { message: 'Subscription cancelled. Access continues until current period end.' };
   }
 
-  // ─── Invoice generation ──────────────────────────────────────────────────────
-
   private async generateSubscriptionInvoice(
     userId: string, planId: string, planMeta: any,
     paymentId: string, periodStart: Date, periodEnd: Date,
   ): Promise<Invoice> {
     const invoiceNumber = await this.nextInvoiceNumber();
     const amount = planMeta.priceMonthly as number;
-    const tax = Math.round(amount * 0.18); // 18% GST
+    const tax = Math.round(amount * 0.18);
 
     return this.invoiceModel.create({
       userId,

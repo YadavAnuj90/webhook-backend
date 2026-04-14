@@ -20,7 +20,7 @@ import { Throttle, SkipThrottle } from '@nestjs/throttler';
 
 @ApiTags('Auth')
 @Controller('auth')
-@SkipEmailVerification()   // Auth routes must be accessible before email verification
+@SkipEmailVerification()
 export class AuthController {
   constructor(
     private authService: AuthService,
@@ -182,8 +182,6 @@ export class AuthController {
     return this.authService.resendVerification(req.user.id || req.user.userId);
   }
 
-  // ── Two-Factor Authentication ─────────────────────────────────────────────
-
   @Post('2fa/setup')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
@@ -250,23 +248,21 @@ export class AuthController {
     return this.twoFactorService.regenerateRecoveryCodes(req.user.id, dto.code, ip);
   }
 
-  // ── Google OAuth ─────────────────────────────────────────────────────────
-
   @Get('google')
   @UseGuards(AuthGuard('google'))
   @ApiOperation({ summary: 'Redirect to Google OAuth consent screen. Browser must follow this URL.' })
   @ApiResponse({ status: 302, description: 'Redirect to Google OAuth consent page' })
   googleLogin() {
-    // Passport redirects automatically — no body needed
+
   }
 
   @Get('google/callback')
   @UseGuards(AuthGuard('google'))
-  @ApiExcludeEndpoint()   // internal — Google calls this, not the frontend
+  @ApiExcludeEndpoint()
   async googleCallback(@Request() req: any, @Ip() ip: string, @Res() res: Response) {
     const { accessToken, refreshToken, isNew } = await this.authService.loginWithGoogle(req.user, ip);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
-    // Redirect to frontend with tokens in query params (frontend reads once and stores in memory)
+
     res.redirect(
       `${frontendUrl}/auth/google/callback?accessToken=${accessToken}&refreshToken=${refreshToken}&isNew=${isNew}`,
     );

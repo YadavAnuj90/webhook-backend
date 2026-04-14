@@ -4,11 +4,6 @@ import { InjectQueue } from '@nestjs/bull';
 import { Queue } from 'bull';
 import { WEBHOOK_QUEUE } from '../../queue/queue.constants';
 
-/**
- * Readiness indicator for Redis (via the Bull queue's underlying client).
- * We piggy-back on Bull so we don't need a second Redis connection just for
- * health checks.
- */
 @Injectable()
 export class RedisHealthIndicator extends HealthIndicator {
   constructor(@InjectQueue(WEBHOOK_QUEUE) private readonly webhookQueue: Queue) {
@@ -18,7 +13,7 @@ export class RedisHealthIndicator extends HealthIndicator {
   async isHealthy(key = 'redis'): Promise<HealthIndicatorResult> {
     try {
       const client: any = await (this.webhookQueue as any).client;
-      // ioredis exposes .ping(); guard for both the promise and callback shapes.
+
       const pong = await client.ping();
       const ok = pong === 'PONG' || pong === 'pong';
       if (!ok) {

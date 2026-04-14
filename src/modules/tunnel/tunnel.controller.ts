@@ -29,11 +29,6 @@ export class TunnelController {
     };
   }
 
-  /* ══════════════════════════════════════════════════════════════════════════
-     AUTHENTICATED ENDPOINTS
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  /** Create a new tunnel session for the current user */
   @Post('create')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
@@ -47,13 +42,12 @@ export class TunnelController {
     return {
       ...meta,
       ...urls,
-      active: false, // Not active until CLI connects via SSE
+      active: false,
       expiresIn: '1h',
       message: 'Connect your CLI to the sseUrl, then send webhooks to the publicUrl',
     };
   }
 
-  /** List all tunnels for the current user */
   @Get('mine')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
@@ -68,7 +62,6 @@ export class TunnelController {
     }));
   }
 
-  /** Delete / destroy a tunnel */
   @Delete(':tunnelId')
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
@@ -80,11 +73,6 @@ export class TunnelController {
     return { success: true, tunnelId, message: 'Tunnel deleted' };
   }
 
-  /* ══════════════════════════════════════════════════════════════════════════
-     PUBLIC ENDPOINTS (no auth — used by CLI and external senders)
-     ══════════════════════════════════════════════════════════════════════════ */
-
-  /** SSE stream — CLI connects here to receive forwarded events */
   @Get('sse/:tunnelId')
   @SkipThrottle()
   @ApiOperation({ summary: 'SSE stream for CLI to receive forwarded webhook events' })
@@ -105,7 +93,6 @@ export class TunnelController {
     this.svc.register(tunnelId, res);
   }
 
-  /** Public inbound — accepts any webhook and forwards to CLI via SSE */
   @Post('in/:tunnelId')
   @SkipThrottle()
   @HttpCode(200)
@@ -131,7 +118,6 @@ export class TunnelController {
     return { success: true, message: 'Event forwarded to CLI', tunnelId };
   }
 
-  /** Check tunnel status (public) */
   @Get('status/:tunnelId')
   @ApiOperation({ summary: 'Check if a tunnel session is active' })
   @ApiParam({ name: 'tunnelId', type: String })

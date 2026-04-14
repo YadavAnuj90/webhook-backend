@@ -23,8 +23,6 @@ export class WorkspacesService {
     private auditService: AuditService,
   ) {}
 
-  // ── CREATE ────────────────────────────────────────────────────────────────────
-
   async create(userId: string, dto: any) {
     const slug =
       (dto.name as string)
@@ -59,10 +57,8 @@ export class WorkspacesService {
     return ws;
   }
 
-  // ── LIST ──────────────────────────────────────────────────────────────────────
-
   async findAllForUser(userId: string, userRole?: string) {
-    // Super admin sees ALL workspaces
+
     if (userRole === 'super_admin') {
       return this.wsModel.find({ isActive: true }).sort({ createdAt: -1 });
     }
@@ -71,13 +67,10 @@ export class WorkspacesService {
       .sort({ createdAt: -1 });
   }
 
-  // ── FIND ONE ──────────────────────────────────────────────────────────────────
-
   async findOne(id: string, userId: string, userRole?: string) {
     const ws = await this.wsModel.findById(id);
     if (!ws) throw new NotFoundException('Workspace not found');
 
-    // Super admin bypasses membership check
     if (userRole === 'super_admin') return ws;
 
     const isMember = ws.members.some(
@@ -86,8 +79,6 @@ export class WorkspacesService {
     if (!isMember) throw new ForbiddenException('Not a member');
     return ws;
   }
-
-  // ── UPDATE ────────────────────────────────────────────────────────────────────
 
   async update(id: string, userId: string, dto: any, userRole?: string) {
     const ws = await this.findOne(id, userId, userRole);
@@ -104,8 +95,6 @@ export class WorkspacesService {
     return this.wsModel.findByIdAndUpdate(id, { $set: dto }, { new: true });
   }
 
-  // ── INVITE (Enterprise Plan Gate + Email + OTP) ───────────────────────────────
-
   async invite(
     id: string,
     userId: string,
@@ -114,7 +103,6 @@ export class WorkspacesService {
   ) {
     const ws = await this.findOne(id, userId, userRole);
 
-    // ── Permission check: owner/admin (or super_admin) ──────────────────────
     if (userRole !== 'super_admin') {
       const member = ws.members.find(
         (m) => m.userId.toString() === userId,
@@ -124,14 +112,10 @@ export class WorkspacesService {
       }
     }
 
-    // ── ENTERPRISE PLAN GATE ────────────────────────────────────────────────
-    // Only Enterprise plan subscribers can invite team members.
-    // Super admin bypasses this check.
     if (userRole !== 'super_admin') {
       await this.enforceEnterprisePlan(ws.ownerId.toString());
     }
 
-    // ── Check team member limit ─────────────────────────────────────────────
     const subscription: any = await this.subscriptionModel
       .findOne({ userId: ws.ownerId.toString() })
       .lean();
@@ -148,7 +132,6 @@ export class WorkspacesService {
       );
     }
 
-    // ── Check for existing invite or membership ─────────────────────────────
     const existingMember: any = await this.userModel.findOne({ email: dto.email.toLowerCase() }).lean();
     if (existingMember) {
       const already = ws.members.some(
@@ -164,9 +147,8 @@ export class WorkspacesService {
     });
     if (existingInvite) throw new ConflictException('Invite already sent to this email');
 
-    // ── Generate invite token + OTP ─────────────────────────────────────────
     const token = uuidv4();
-    const otp = this.generateOtp(); // 6-digit OTP
+    const otp = this.generateOtp();
 
     const invite = await this.inviteModel.create({
       workspaceId: ws._id,
@@ -177,7 +159,6 @@ export class WorkspacesService {
       invitedBy: new Types.ObjectId(userId),
     });
 
-    // ── Audit log ───────────────────────────────────────────────────────────
     await this.auditService.log({
       userId,
       action: AuditAction.MEMBER_INVITED,
@@ -201,11 +182,9 @@ export class WorkspacesService {
         expiresAt: invite.expiresAt,
       },
       inviteUrl: `${process.env.FRONTEND_URL || 'http://localhost:3001'}/invite/${token}`,
-      otp, // Return OTP so it can be shared via secondary channel (SMS, chat, etc.)
+      otp,
     };
   }
-
-  // ── ACCEPT INVITE (Token or OTP) ──────────────────────────────────────────────
 
   async acceptInvite(token: string, userId: string) {
     const invite = await this.inviteModel.findOne({ token, accepted: false });
@@ -224,7 +203,6 @@ export class WorkspacesService {
     if (!invite) throw new NotFoundException('Invalid OTP or no pending invite');
     if (new Date() > invite.expiresAt) throw new ForbiddenException('Invite expired');
 
-    // Verify the user's email matches the invite
     const user: any = await this.userModel.findById(userId).select('email').lean();
     if (!user || user.email.toLowerCase() !== invite.email.toLowerCase()) {
       throw new ForbiddenException('OTP does not match your email');
@@ -232,8 +210,6 @@ export class WorkspacesService {
 
     return this.processAcceptInvite(invite, userId);
   }
-
-  // ── REMOVE MEMBER ─────────────────────────────────────────────────────────────
 
   async removeMember(
     id: string,
@@ -274,8 +250,6 @@ export class WorkspacesService {
     return { success: true };
   }
 
-  // ── UPDATE MEMBER ROLE ────────────────────────────────────────────────────────
-
   async updateMemberRole(
     id: string,
     userId: string,
@@ -294,7 +268,6 @@ export class WorkspacesService {
       }
     }
 
-    // Can't change owner's role
     if (targetUserId === ws.ownerId.toString() && role !== MemberRole.OWNER) {
       throw new ForbiddenException('Cannot change workspace owner\'s role');
     }
@@ -319,17 +292,13 @@ export class WorkspacesService {
     return { success: true };
   }
 
-  // ── LIST INVITES ──────────────────────────────────────────────────────────────
-
   async listInvites(id: string, userId: string, userRole?: string) {
     await this.findOne(id, userId, userRole);
     return this.inviteModel
       .find({ workspaceId: id, accepted: false })
-      .select('-token -otp') // Don't expose token/otp in list
+      .select('-token -otp')
       .sort({ createdAt: -1 });
   }
-
-  // ── REVOKE INVITE ─────────────────────────────────────────────────────────────
 
   async revokeInvite(
     workspaceId: string,
@@ -359,8 +328,6 @@ export class WorkspacesService {
     return { success: true };
   }
 
-  // ── DELETE WORKSPACE ──────────────────────────────────────────────────────────
-
   async delete(id: string, userId: string, userRole?: string) {
     const ws = await this.findOne(id, userId, userRole);
 
@@ -381,12 +348,6 @@ export class WorkspacesService {
     return { success: true };
   }
 
-  // ── PRIVATE HELPERS ───────────────────────────────────────────────────────────
-
-  /**
-   * Enforce that the workspace owner is on the Enterprise plan.
-   * Starter and Pro plans are single-user — no team invites allowed.
-   */
   private async enforceEnterprisePlan(ownerId: string): Promise<void> {
     const user: any = await this.userModel
       .findById(ownerId)
@@ -403,16 +364,10 @@ export class WorkspacesService {
     }
   }
 
-  /**
-   * Generate a 6-digit numeric OTP for invite verification.
-   */
   private generateOtp(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
   }
 
-  /**
-   * Shared logic for accepting an invite (token or OTP path).
-   */
   private async processAcceptInvite(invite: any, userId: string) {
     const ws = await this.wsModel.findById(invite.workspaceId);
     if (!ws) throw new NotFoundException('Workspace not found');

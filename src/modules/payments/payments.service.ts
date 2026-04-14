@@ -2,7 +2,7 @@ import { Injectable, Logger, NotFoundException, BadRequestException } from '@nes
 import { InjectModel } from '@nestjs/mongoose';
 import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
-// eslint-disable-next-line @typescript-eslint/no-var-requires
+
 const Razorpay = require('razorpay');
 import { createHmac } from 'crypto';
 import { User } from '../users/schemas/user.schema';
@@ -73,7 +73,6 @@ export class PaymentsService {
       subscriptionStartAt: now, subscriptionEndAt: periodEnd,
     });
 
-    // Sync new Subscription model
     const planMeta = SYSTEM_PLANS[dto.planId];
     if (planMeta) {
       await this.subModel.findOneAndUpdate({ userId }, {
@@ -95,15 +94,12 @@ export class PaymentsService {
 
     const event = body.event as string;
 
-    // ── Idempotency: skip if we've already processed this payment ────────────
-    // Razorpay may deliver the same webhook more than once (network retries).
-    // We use the payment/subscription entity ID as a natural idempotency key.
     const entityId: string | undefined =
       body.payload?.payment?.entity?.id ??
       body.payload?.subscription?.entity?.id;
 
     if (entityId) {
-      // Check if this paymentId was already stored on any user record
+
       const alreadyProcessed = await this.userModel.exists({ razorpayPaymentId: entityId });
       if (alreadyProcessed) {
         this.logger.log(`Webhook idempotency: skipping already-processed event ${event} for ${entityId}`);
@@ -113,7 +109,6 @@ export class PaymentsService {
 
     this.logger.log(`Razorpay webhook: ${event}`);
 
-    // ─── payment.captured ────────────────────────────────────────────────────
     if (event === 'payment.captured') {
       const payment = body.payload?.payment?.entity;
       const { userId, planId } = payment?.notes ?? {};
@@ -137,7 +132,6 @@ export class PaymentsService {
       }
     }
 
-    // ─── subscription.charged (auto-renewal) ─────────────────────────────────
     if (event === 'subscription.charged') {
       const sub  = body.payload?.subscription?.entity;
       const pmt  = body.payload?.payment?.entity;
@@ -155,7 +149,6 @@ export class PaymentsService {
       }
     }
 
-    // ─── subscription.halted / payment.failed ────────────────────────────────
     if (event === 'subscription.halted' || event === 'payment.failed') {
       const payment = body.payload?.payment?.entity ?? body.payload?.subscription?.entity;
       const userId  = payment?.notes?.userId;
@@ -166,7 +159,6 @@ export class PaymentsService {
       }
     }
 
-    // ─── subscription.cancelled ──────────────────────────────────────────────
     if (event === 'subscription.cancelled') {
       const sub    = body.payload?.subscription?.entity;
       const userId = sub?.notes?.userId;

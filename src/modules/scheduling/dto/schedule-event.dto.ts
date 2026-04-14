@@ -5,8 +5,8 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export enum ScheduleType {
-  ONCE    = 'once',      // deliver at a specific time
-  CRON    = 'cron',      // recurring delivery on a cron schedule
+  ONCE    = 'once',
+  CRON    = 'cron',
 }
 
 export class ScheduleEventDto {

@@ -43,8 +43,6 @@ export class Plan extends Document {
 
 export const PlanSchema = SchemaFactory.createForClass(Plan);
 
-// Plans listing for a reseller (or system plans where resellerId=null)
 PlanSchema.index({ type: 1, resellerId: 1, isActive: 1 }, { name: 'idx_type_reseller_active' });
 
-// Storefront sort order
 PlanSchema.index({ isActive: 1, sortOrder: 1 }, { name: 'idx_active_sort' });

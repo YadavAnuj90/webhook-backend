@@ -18,12 +18,9 @@ export class SlaMonitorService {
     private operationalWebhooksService: OperationalWebhooksService,
   ) {}
 
-  /**
-   * Check for SLA breaches every minute.
-   */
   @Cron(CronExpression.EVERY_MINUTE)
   async checkSlaBreaches(): Promise<void> {
-    // Find all event types with SLA defined
+
     const eventTypes = await this.eventTypeModel.find({
       maxDeliverySeconds: { $gt: 0 },
     });
@@ -33,7 +30,6 @@ export class SlaMonitorService {
         Date.now() - et.maxDeliverySeconds * 1000,
       );
 
-      // Find events that exceed SLA
       const breaches = await this.eventModel.find({
         eventType: et.name,
         status: { $in: [EventStatus.PENDING, EventStatus.RETRYING] },

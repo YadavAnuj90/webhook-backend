@@ -22,10 +22,6 @@ export class RetryWorkerService {
     private notificationsService: NotificationsService,
   ) {}
 
-  /**
-   * Every minute: pick up events due for retry and re-queue them.
-   * This handles cases where the app restarted and lost in-memory retries.
-   */
   @Cron(CronExpression.EVERY_MINUTE)
   async rescheduleFailedEvents() {
     const now = new Date();
@@ -46,9 +42,6 @@ export class RetryWorkerService {
     }
   }
 
-  /**
-   * Every hour: update DLQ metrics gauge
-   */
   @Cron(CronExpression.EVERY_HOUR)
   async updateDlqMetrics() {
     const dlqCount = await this.eventModel.countDocuments({ status: EventStatus.DEAD });
@@ -56,9 +49,6 @@ export class RetryWorkerService {
     this.logger.log(`📊 DLQ size updated: ${dlqCount}`);
   }
 
-  /**
-   * Every hour: alert if DLQ has too many events
-   */
   @Cron(CronExpression.EVERY_HOUR)
   async alertOnHighDlq() {
     const dlqCount = await this.eventModel.countDocuments({ status: EventStatus.DEAD });
@@ -71,9 +61,6 @@ export class RetryWorkerService {
     }
   }
 
-  /**
-   * Daily at midnight: reset monthly event counters that are due
-   */
   @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
   async resetMonthlyCounters() {
     const now = new Date();
@@ -87,9 +74,6 @@ export class RetryWorkerService {
     this.logger.log(`📅 Reset monthly counters for ${result.modifiedCount} projects`);
   }
 
-  /**
-   * Every 5 minutes: log queue health
-   */
   @Cron('*/5 * * * *')
   async logQueueHealth() {
     const [waiting, active, completed, failed] = await Promise.all([
@@ -106,20 +90,13 @@ export class RetryWorkerService {
     );
   }
 
-  /**
-   * Every day at 3am: clean up old completed jobs from Bull queue
-   */
   @Cron('0 3 * * *')
   async cleanOldJobs() {
-    await this.webhookQueue.clean(7 * 24 * 3600 * 1000, 'completed'); // 7 days
-    await this.webhookQueue.clean(30 * 24 * 3600 * 1000, 'failed');   // 30 days
+    await this.webhookQueue.clean(7 * 24 * 3600 * 1000, 'completed');
+    await this.webhookQueue.clean(30 * 24 * 3600 * 1000, 'failed');
     this.logger.log('🧹 Cleaned old queue jobs');
   }
 
-  /**
-   * Every day at 2am: purge DLQ events older than DLQ_RETENTION_DAYS (default 90).
-   * Prevents the dead-letter collection from growing unbounded.
-   */
   @Cron('0 2 * * *')
   async purgeOldDlqEvents() {
     const retentionDays = parseInt(process.env.DLQ_RETENTION_DAYS || '90', 10);
@@ -131,10 +108,6 @@ export class RetryWorkerService {
     if (deletedCount) this.logger.log(`🗑️  Purged ${deletedCount} DLQ events older than ${retentionDays}d`);
   }
 
-  /**
-   * Every hour: queue-depth guardrail. Emits a warning when backlog
-   * crosses thresholds so alerting can page on-call.
-   */
   @Cron(CronExpression.EVERY_HOUR)
   async backlogGuardrail() {
     const waiting = await this.webhookQueue.getWaitingCount();

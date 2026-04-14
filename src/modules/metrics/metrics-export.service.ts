@@ -6,7 +6,7 @@ import { MetricsService } from './metrics.service';
 
 interface MetricPoint {
   metric: string;
-  points: [[number, number]]; // [timestamp, value]
+  points: [[number, number]];
   type: 'count' | 'gauge' | 'rate';
   tags?: string[];
 }
@@ -27,7 +27,6 @@ export class MetricsExportService {
     this.nrAccountId = config.get('NEW_RELIC_ACCOUNT_ID');
   }
 
-  /** Push metrics to Datadog every 60 seconds */
   @Cron(CronExpression.EVERY_MINUTE)
   async exportToDatadog() {
     if (!this.ddApiKey) return;
@@ -53,7 +52,6 @@ export class MetricsExportService {
     }
   }
 
-  /** Push metrics to New Relic every 60 seconds */
   @Cron(CronExpression.EVERY_MINUTE)
   async exportToNewRelic() {
     if (!this.nrApiKey || !this.nrAccountId) return;

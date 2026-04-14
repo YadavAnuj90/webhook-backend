@@ -25,10 +25,6 @@ export class BatchDeliveryService {
     this.redis = new Redis.default({ host, port, password: password || undefined });
   }
 
-  /**
-   * Add event ID to batch for the given endpoint.
-   * If batch size >= maxSize, immediately flush.
-   */
   async addToBatch(
     endpointId: string,
     eventId: string,
@@ -37,13 +33,10 @@ export class BatchDeliveryService {
   ): Promise<void> {
     const key = `batch:${endpointId}`;
 
-    // Add event ID to left of list
     await this.redis.lpush(key, eventId);
 
-    // Set expiry on key
     await this.redis.expire(key, windowSeconds);
 
-    // Check length
     const len = await this.redis.llen(key);
 
     if (len >= maxSize) {
@@ -51,27 +44,20 @@ export class BatchDeliveryService {
     }
   }
 
-  /**
-   * Flush all buffered events for an endpoint to its destination.
-   */
   async flushBatch(endpointId: string): Promise<void> {
     const key = `batch:${endpointId}`;
 
-    // Atomically get and delete
     const eventIds: string[] = await this.redis.lrange(key, 0, -1);
     if (eventIds.length === 0) return;
 
     await this.redis.del(key);
 
-    // Load endpoint
     const endpoint = await this.endpointModel.findById(endpointId);
     if (!endpoint) return;
 
-    // Load payloads
     const events = await this.eventModel.find({ _id: { $in: eventIds } });
     const payloads = events.map((e) => e.payload);
 
-    // Send batch
     const batchPayload = {
       events: payloads,
       batchSize: payloads.length,
@@ -89,7 +75,7 @@ export class BatchDeliveryService {
       });
 
       if (response.status >= 200 && response.status < 300) {
-        // Mark all as delivered
+
         await Promise.all(
           eventIds.map((id) =>
             this.eventModel.findByIdAndUpdate(id, {
@@ -99,9 +85,8 @@ export class BatchDeliveryService {
           ),
         );
 
-        // Log delivery
         await this.logModel.create({
-          eventId: eventIds[0], // Reference first event
+          eventId: eventIds[0],
           endpointId: endpoint.id,
           projectId: endpoint.projectId,
           attempt: 1,
@@ -123,9 +108,6 @@ export class BatchDeliveryService {
     }
   }
 
-  /**
-   * Cron job to flush batches every 5 seconds.
-   */
   @Cron(CronExpression.EVERY_5_SECONDS)
   async flushPendingBatches(): Promise<void> {
     const pattern = 'batch:*';

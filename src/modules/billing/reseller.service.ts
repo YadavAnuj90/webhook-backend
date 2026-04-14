@@ -23,8 +23,6 @@ export class ResellerService {
     @InjectModel(Plan.name)             private planModel:      Model<Plan>,
   ) {}
 
-  // ─── Reseller Profile ────────────────────────────────────────────────────────
-
   async getProfile(userId: string): Promise<Reseller> {
     const r = await this.resellerModel.findOne({ userId });
     if (!r) throw new NotFoundException('Reseller profile not found. Upgrade to Enterprise plan.');
@@ -45,8 +43,6 @@ export class ResellerService {
       { upsert: true, new: true },
     );
   }
-
-  // ─── Customer Management ─────────────────────────────────────────────────────
 
   async addCustomer(resellerId: string, dto: {
     customerEmail: string;
@@ -72,7 +68,6 @@ export class ResellerService {
       notes: dto.notes ?? '',
     });
 
-    // Activate customer subscription under reseller
     await this.subModel.findOneAndUpdate(
       { userId: customer.id },
       {
@@ -125,16 +120,12 @@ export class ResellerService {
     return { message: 'Customer reactivated' };
   }
 
-  // ─── Track usage per customer ────────────────────────────────────────────────
-
   async incrementCustomerUsage(customerId: string, events: number) {
     await this.rcModel.findOneAndUpdate(
       { customerId, isActive: true },
       { $inc: { currentMonthEvents: events } },
     );
   }
-
-  // ─── Generate invoices for all customers ─────────────────────────────────────
 
   async generateMonthlyInvoices(resellerId: string) {
     const customers = await this.rcModel.find({ resellerId, isActive: true });
@@ -171,7 +162,6 @@ export class ResellerService {
         dueDate: new Date(Date.now() + 7 * 24 * 3600_000),
       });
 
-      // Reset cycle
       await this.rcModel.findByIdAndUpdate(rc._id, {
         currentMonthEvents: 0,
         billingCycleStart: new Date(),
@@ -181,7 +171,6 @@ export class ResellerService {
       generated.push({ customerId: rc.customerId, invoiceNumber, total: amountPaise + tax });
     }
 
-    // Update reseller total revenue
     const totalNew = generated.reduce((s, i) => s + i.total, 0);
     await this.resellerModel.findOneAndUpdate(
       { userId: resellerId },
@@ -192,7 +181,6 @@ export class ResellerService {
     return { generated: generated.length, invoices: generated };
   }
 
-  /** Cron: generate invoices on 1st of each month */
   @Cron('0 1 1 * *')
   async autoGenerateAllMonthlyInvoices() {
     const resellers = await this.resellerModel.find({ isActive: true }).lean();
@@ -204,8 +192,6 @@ export class ResellerService {
       }
     }
   }
-
-  // ─── Customer invoices view ──────────────────────────────────────────────────
 
   async getCustomerInvoices(resellerId: string, customerId: string) {
     return this.invoiceModel.find({ resellerId, customerId }).sort({ createdAt: -1 }).lean();

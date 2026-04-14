@@ -5,11 +5,6 @@ import { FilterRule } from '../modules/endpoints/schemas/endpoint.schema';
 export class FilterEngineService {
   private readonly logger = new Logger(FilterEngineService.name);
 
-  /**
-   * Evaluate all filter rules against an event payload.
-   * Returns true if event should be delivered (all rules pass).
-   * Empty rules = deliver everything.
-   */
   evaluate(rules: FilterRule[], eventType: string, payload: Record<string, any>): boolean {
     if (!rules || rules.length === 0) return true;
 
@@ -32,19 +27,12 @@ export class FilterEngineService {
     }
   }
 
-  /**
-   * Get nested value from object using dot-notation path.
-   * e.g. "payload.order.amount" → obj.payload.order.amount
-   */
   private getNestedValue(obj: any, path: string): any {
     return path.split('.').reduce((current, key) => {
       return current && current[key] !== undefined ? current[key] : undefined;
     }, obj);
   }
 
-  /**
-   * Validate filter rules before saving (sanity check)
-   */
   validateRules(rules: FilterRule[]): { valid: boolean; error?: string } {
     const validOperators = ['eq', 'neq', 'gt', 'lt', 'contains', 'exists'];
     for (const rule of rules) {

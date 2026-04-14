@@ -19,9 +19,9 @@ export class PortalService {
 
   async createToken(userId: string, dto: {
     projectId: string; customerName: string; customerEmail?: string; expiresAt?: string;
-    // Legacy
+
     logoUrl?: string; brandColor?: string;
-    // Extended branding
+
     companyName?: string; faviconUrl?: string; primaryColor?: string; secondaryColor?: string;
     fontFamily?: string; darkMode?: boolean; customDomain?: string; supportEmail?: string;
     portalTitle?: string; customCss?: string; socialLinks?: Record<string, string>;
@@ -85,7 +85,7 @@ export class PortalService {
     return {
       projectId: pt.projectId,
       customerName: pt.customerName,
-      // Branding
+
       companyName: pt.companyName || null,
       logoUrl: pt.logoUrl || null,
       faviconUrl: pt.faviconUrl || null,
@@ -147,7 +147,6 @@ export class PortalController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   updateBranding(@Param('id') id: string, @Request() req: any, @Body() dto: CreatePortalTokenDto) { return this.svc.updateBranding(req.user.id, id, dto); }
 
-  // Customer Self-Service Event Subscriptions
   @UseGuards(AuthGuard('jwt'))
   @ApiBearerAuth('JWT')
   @Patch('tokens/:id/subscriptions')
@@ -187,7 +186,6 @@ export class PortalController {
   @ApiResponse({ status: 401, description: 'Unauthorized' })
   deleteToken(@Param('id') id: string, @Request() req: any) { return this.svc.deleteToken(req.user.id, id); }
 
-  // ─── Public endpoints ──────────────────────────────────────────────────────
   @Get('access/:token')
   @ApiOperation({ summary: 'Public: get portal branding and configuration by token (no auth required)' })
   @ApiParam({ name: 'token', description: 'Portal access token (starts with pt_)', type: String })

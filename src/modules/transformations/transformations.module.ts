@@ -50,11 +50,11 @@ export class TransformationsService {
           if (cfg.additions) data = { ...data, ...cfg.additions };
           break;
         case 'filter':
-          // simple field=value filter — returns null if no match (skip delivery)
+
           if (cfg.filterField && cfg.filterValue && data[cfg.filterField] !== cfg.filterValue) return null;
           break;
         case 'custom_js':
-          // SAFE: no eval — just template substitution
+
           if (cfg.template) {
             const tmpl = JSON.stringify(cfg.template);
             const rendered = tmpl.replace(/\{\{(\w+)\}\}/g, (_: string, k: string) => JSON.stringify(data[k] ?? ''));

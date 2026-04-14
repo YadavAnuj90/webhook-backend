@@ -4,11 +4,6 @@ import { Project, ProjectSchema } from '../../modules/projects/schemas/project.s
 import { Workspace, WorkspaceSchema } from '../../modules/workspaces/schemas/workspace.schema';
 import { ProjectAccessGuard } from './project-access.guard';
 
-/**
- * ProjectAccessModule — @Global so ProjectAccessGuard is available
- * everywhere without explicit imports. Provides the Mongoose models
- * needed for membership resolution.
- */
 @Global()
 @Module({
   imports: [

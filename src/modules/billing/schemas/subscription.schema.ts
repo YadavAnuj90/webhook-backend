@@ -11,17 +11,6 @@ export enum SubscriptionStatus {
   CREDIT_ONLY   = 'credit_only',
 }
 
-/**
- * Subscription — checked on every authenticated API request (via SubscriptionGuard).
- *
- * DBA decisions:
- * - userId unique: one subscription per user, O(1) findOne by userId
- * - versionKey:false
- * - Compound indexes for scheduled jobs:
- *     trial expiry job   → { status:'trial', trialEndAt }
- *     renewal job        → { status:'active', currentPeriodEnd }
- * - Status field updated atomically with period dates in one findOneAndUpdate
- */
 @Schema({
   timestamps: true,
   versionKey: false,
@@ -54,7 +43,6 @@ export class Subscription extends Document {
 
   @Prop({ default: true }) autoRenew: boolean;
 
-  // Quota snapshot — denormalised from Plan for fast access
   @Prop({ default: 5000 }) eventsPerMonth: number;
   @Prop({ default: 3 })    endpointsLimit: number;
   @Prop({ default: 7 })    retentionDays:  number;
@@ -62,23 +50,18 @@ export class Subscription extends Document {
 
 export const SubscriptionSchema = SchemaFactory.createForClass(Subscription);
 
-// Primary lookup: one row per user
 SubscriptionSchema.index({ userId: 1 }, { unique: true, name: 'uq_user' });
 
-// SubscriptionGuard fast-path: userId + status in one covered read
 SubscriptionSchema.index({ userId: 1, status: 1 }, { name: 'idx_user_status' });
 
-// Trial expiry cron job
 SubscriptionSchema.index(
   { status: 1, trialEndAt: 1 },
   { partialFilterExpression: { status: 'trial' }, name: 'idx_trial_expiry_partial' },
 );
 
-// Renewal / dunning cron job
 SubscriptionSchema.index(
   { status: 1, currentPeriodEnd: 1 },
   { partialFilterExpression: { status: 'active' }, name: 'idx_renewal_partial' },
 );
 
-// Reseller dashboard
 SubscriptionSchema.index({ resellerId: 1 }, { sparse: true, name: 'idx_reseller' });

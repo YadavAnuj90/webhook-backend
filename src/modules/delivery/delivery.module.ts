@@ -3,6 +3,8 @@ import { MongooseModule } from '@nestjs/mongoose';
 import { BullModule } from '@nestjs/bull';
 import { DeliveryService } from './delivery.service';
 import { RetryWorkerService } from './retry-worker.service';
+import { SharedCircuitBreaker } from './shared-breaker.service';
+import { DeliveryLogWriter } from './delivery-log-writer.service';
 import { DeliveryLog, DeliveryLogSchema } from './schemas/delivery-log.schema';
 import { WebhookEvent, WebhookEventSchema } from '../events/schemas/event.schema';
 import { Endpoint, EndpointSchema } from '../endpoints/schemas/endpoint.schema';
@@ -28,7 +30,6 @@ export class WebhookQueueProcessor {
     await this.deliveryService.deliver(job.data.eventId);
   }
 
-  // Fallback for unnamed jobs
   @Process({ concurrency: 5 })
   async handleDefault(job: Job<{ eventId: string }>) {
     if (job.data?.eventId) await this.deliveryService.deliver(job.data.eventId);
@@ -65,10 +66,12 @@ export class DlqProcessor {
   providers: [
     DeliveryService,
     RetryWorkerService,
+    SharedCircuitBreaker,
+    DeliveryLogWriter,
     FilterEngineService,
     WebhookQueueProcessor,
     DlqProcessor,
   ],
-  exports: [DeliveryService],
+  exports: [DeliveryService, SharedCircuitBreaker, DeliveryLogWriter],
 })
 export class DeliveryModule {}

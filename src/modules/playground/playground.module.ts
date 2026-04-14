@@ -9,7 +9,6 @@ import * as crypto from 'crypto';
 import axios from 'axios';
 import { PlaygroundFireDto, ValidateSignatureDto } from './dto/playground.dto';
 
-// Inline lightweight playground — fires a test delivery and returns full response details
 @ApiTags('Playground')
 @ApiBearerAuth('JWT')
 @Controller('playground')

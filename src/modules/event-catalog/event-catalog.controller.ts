@@ -95,7 +95,6 @@ export class EventCatalogController {
     return this.svc.validatePayload(projectId, dto.eventType, dto.payload);
   }
 
-  // CI/CD contract testing endpoint
   @Post(':name/contract-test')
   @ApiOperation({ summary: 'CI/CD: validate payload shape against registered schema — returns 200 on pass, 422 on failure' })
   @ApiParam({ name: 'projectId', description: 'Project ID', type: String })
@@ -119,7 +118,6 @@ export class EventCatalogController {
     return res.status(result.valid ? 200 : 422).json(result);
   }
 
-  // Webhook Simulator
   @Post(':id/simulate')
   @ApiOperation({ summary: 'Fire a simulated webhook using the event type sample payload' })
   @ApiParam({ name: 'projectId', description: 'Project ID', type: String })

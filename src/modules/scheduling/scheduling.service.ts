@@ -14,22 +14,11 @@ import { PayloadCrypto } from '../../utils/payload-crypto';
 import { PiiScrubber } from '../../utils/pii-scrubber';
 import { WEBHOOK_QUEUE } from '../../queue/queue.constants';
 
-/**
- * SchedulingService — delayed webhook delivery.
- *
- * Architecture:
- * - Users schedule events with a future `scheduledFor` timestamp
- * - Cron job runs every 30s to find due events
- * - Due events are converted to WebhookEvents and pushed to the normal delivery queue
- * - Supports cancel, reschedule, and list operations
- * - Max schedule window: 30 days in the future
- */
 @Injectable()
 export class SchedulingService {
   private readonly logger = new Logger(SchedulingService.name);
 
-  /** Maximum seconds in the future an event can be scheduled */
-  private readonly MAX_SCHEDULE_WINDOW_MS = 30 * 24 * 3600 * 1000; // 30 days
+  private readonly MAX_SCHEDULE_WINDOW_MS = 30 * 24 * 3600 * 1000;
 
   constructor(
     @InjectModel(ScheduledEvent.name) private scheduledModel: Model<ScheduledEvent>,
@@ -37,8 +26,6 @@ export class SchedulingService {
     @InjectModel(Endpoint.name)       private endpointModel: Model<Endpoint>,
     @InjectQueue(WEBHOOK_QUEUE)       private webhookQueue: Queue,
   ) {}
-
-  // ── CRUD ──────────────────────────────────────────────────────────────────────
 
   async schedule(
     projectId: string,
@@ -52,7 +39,7 @@ export class SchedulingService {
     },
     userId: string,
   ) {
-    // Validate endpoint exists and belongs to project
+
     const endpoint = await this.endpointModel.findOne({
       _id: dto.endpointId,
       projectId,
@@ -69,7 +56,6 @@ export class SchedulingService {
       throw new BadRequestException('Cannot schedule more than 30 days in advance');
     }
 
-    // Idempotency check
     if (dto.idempotencyKey) {
       const existing = await this.scheduledModel.findOne({
         projectId,
@@ -165,12 +151,6 @@ export class SchedulingService {
     return { message: 'Scheduled event cancelled' };
   }
 
-  // ── DISPATCH CRON ─────────────────────────────────────────────────────────────
-
-  /**
-   * Every 30 seconds: find pending scheduled events due for dispatch
-   * and convert them to real WebhookEvents in the delivery queue.
-   */
   @Cron('*/30 * * * * *')
   async dispatchDueEvents() {
     const now = new Date();
@@ -185,7 +165,7 @@ export class SchedulingService {
 
     for (const scheduled of dueEvents) {
       try {
-        // Verify endpoint is still active
+
         const endpoint = await this.endpointModel.findById(scheduled.endpointId);
         if (!endpoint || endpoint.status !== EndpointStatus.ACTIVE) {
           await this.scheduledModel.findByIdAndUpdate(scheduled.id, {
@@ -196,19 +176,16 @@ export class SchedulingService {
           continue;
         }
 
-        // PII scrubbing
         let payloadToStore = scheduled.payload;
         if (endpoint.piiFields?.length) {
           payloadToStore = PiiScrubber.scrub(scheduled.payload, endpoint.piiFields);
         }
 
-        // Encrypt if enabled
         let finalPayload: any = payloadToStore;
         if (PayloadCrypto.isEnabled()) {
           finalPayload = PayloadCrypto.encrypt(JSON.stringify(payloadToStore));
         }
 
-        // Create real WebhookEvent
         const idempotencyKey = scheduled.idempotencyKey ||
           `sched-${scheduled.id}-${Date.now()}`;
 
@@ -222,7 +199,6 @@ export class SchedulingService {
           status: 'pending',
         });
 
-        // Queue for delivery
         const priorityMap: Record<string, number> = { p0: 1, p1: 2, p2: 3, p3: 4 };
         await this.webhookQueue.add('deliver', { eventId: event.id }, {
           attempts: 1,
@@ -230,7 +206,6 @@ export class SchedulingService {
           priority: priorityMap[scheduled.priority] || 3,
         });
 
-        // Update scheduled event
         await this.scheduledModel.findByIdAndUpdate(scheduled.id, {
           status: ScheduledEventStatus.QUEUED,
           dispatchedEventId: event.id,

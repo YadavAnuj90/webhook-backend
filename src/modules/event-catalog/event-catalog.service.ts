@@ -3,11 +3,6 @@ import { InjectModel } from '@nestjs/mongoose';
 import { Model } from 'mongoose';
 import { EventType } from './schemas/event-type.schema';
 
-// ---------------------------------------------------------------------------
-// Lightweight JSON Schema validator — no external deps required
-// Supports: type, required, properties, items, enum,
-//           minLength, maxLength, minimum, maximum, pattern
-// ---------------------------------------------------------------------------
 export interface SchemaError { path: string; message: string }
 
 function validateSchema(
@@ -18,17 +13,15 @@ function validateSchema(
   const errors: SchemaError[] = [];
   if (!schema || typeof schema !== 'object') return errors;
 
-  // type
   if (schema.type) {
     const types = Array.isArray(schema.type) ? schema.type : [schema.type];
     const jsType = data === null ? 'null' : Array.isArray(data) ? 'array' : typeof data;
     if (!types.includes(jsType)) {
       errors.push({ path: path || '/', message: `Expected type "${types.join('|')}", got "${jsType}"` });
-      return errors; // further checks meaningless
+      return errors;
     }
   }
 
-  // enum
   if (Array.isArray(schema.enum) && !schema.enum.includes(data)) {
     errors.push({ path: path || '/', message: `Value must be one of [${schema.enum.join(', ')}]` });
   }
@@ -51,14 +44,14 @@ function validateSchema(
 
   if (typeof data === 'object' && data !== null && !Array.isArray(data)) {
     const obj = data as Record<string, unknown>;
-    // required
+
     if (Array.isArray(schema.required)) {
       for (const key of schema.required) {
         if (!(key in obj))
           errors.push({ path: `${path}.${key}`, message: `Required field missing` });
       }
     }
-    // properties
+
     if (schema.properties && typeof schema.properties === 'object') {
       for (const [key, subSchema] of Object.entries(schema.properties)) {
         if (key in obj) {
@@ -66,7 +59,7 @@ function validateSchema(
         }
       }
     }
-    // additionalProperties: false
+
     if (schema.additionalProperties === false && schema.properties) {
       for (const key of Object.keys(obj)) {
         if (!(key in schema.properties))
@@ -128,7 +121,6 @@ export class EventCatalogService {
     return { success: true };
   }
 
-  /** Validate a payload against the stored JSON Schema for this event type */
   async validatePayload(projectId: string, eventTypeName: string, payload: Record<string, any>): Promise<{ valid: boolean; errors: SchemaError[] }> {
     const et = await this.model.findOne({ projectId, name: eventTypeName, isActive: true })
       .sort({ version: -1 });
@@ -137,7 +129,6 @@ export class EventCatalogService {
     return { valid: errors.length === 0, errors };
   }
 
-  /** Lookup by name for use in events service */
   async findByName(
     projectId: string,
     name: string,
@@ -147,7 +138,6 @@ export class EventCatalogService {
       .sort({ version: -1 });
   }
 
-  // FEATURE 13: Webhook Simulator
   async simulate(
     projectId: string,
     id: string,

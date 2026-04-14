@@ -10,41 +10,16 @@ import {
 } from './permissions.constants';
 import { CustomRole } from './schemas/custom-role.schema';
 
-/**
- * PermissionsService — fine-grained RBAC authorization.
- *
- * Architecture:
- * - Built-in roles (owner/admin/developer/viewer) have static permission matrices
- * - Custom roles allow per-project overrides for enterprise use cases
- * - Permission check is O(1) via Set lookup
- * - Guards call hasPermission() — decoupled from route logic
- *
- * Usage in controllers:
- *   @UseGuards(PermissionGuard)
- *   @RequirePermission(Resource.EVENTS, Action.EXECUTE)
- */
 @Injectable()
 export class PermissionsService {
   private readonly logger = new Logger(PermissionsService.name);
 
-  /** Cache: customRoleId → Set<Permission> (invalidated on role update) */
   private roleCache = new Map<string, Set<string>>();
 
   constructor(
     @InjectModel(CustomRole.name) private customRoleModel: Model<CustomRole>,
   ) {}
 
-  // ── PERMISSION CHECK ──────────────────────────────────────────────────────────
-
-  /**
-   * Check if a member has a specific permission.
-   * Works for both built-in roles and custom roles.
-   *
-   * @param role - built-in role string OR custom role ID
-   * @param resource - the resource being accessed
-   * @param action - the action being performed
-   * @returns true if permitted
-   */
   async hasPermission(
     role: string,
     resource: Resource,
@@ -52,19 +27,14 @@ export class PermissionsService {
   ): Promise<boolean> {
     const permission: Permission = `${resource}:${action}`;
 
-    // Check built-in roles first
     if (Object.values(ProjectRole).includes(role as ProjectRole)) {
       const perms = ROLE_PERMISSIONS[role as ProjectRole] || [];
       return perms.includes(permission);
     }
 
-    // Custom role — check by role ID
     return this.hasCustomRolePermission(role, permission);
   }
 
-  /**
-   * Check permission and throw ForbiddenException if not allowed.
-   */
   async checkPermission(
     role: string,
     resource: Resource,
@@ -78,9 +48,6 @@ export class PermissionsService {
     }
   }
 
-  /**
-   * Get all permissions for a role (built-in or custom).
-   */
   async getPermissions(role: string): Promise<Permission[]> {
     if (Object.values(ProjectRole).includes(role as ProjectRole)) {
       return ROLE_PERMISSIONS[role as ProjectRole];
@@ -90,8 +57,6 @@ export class PermissionsService {
     if (!customRole || !customRole.isActive) return [];
     return customRole.permissions as Permission[];
   }
-
-  // ── CUSTOM ROLE CRUD ──────────────────────────────────────────────────────────
 
   async createCustomRole(
     projectId: string,
@@ -103,7 +68,7 @@ export class PermissionsService {
     },
     userId: string,
   ) {
-    // Validate all permissions are valid
+
     const invalid = dto.permissions.filter((p) => !ALL_PERMISSIONS.includes(p as Permission));
     if (invalid.length > 0) {
       throw new BadRequestException(
@@ -111,7 +76,6 @@ export class PermissionsService {
       );
     }
 
-    // Check for reserved role names
     const reserved = Object.values(ProjectRole);
     if (reserved.includes(dto.name.toLowerCase() as ProjectRole)) {
       throw new BadRequestException(`"${dto.name}" is a reserved role name`);
@@ -165,7 +129,6 @@ export class PermissionsService {
     if (dto.permissions) updates.permissions = dto.permissions;
     if (dto.color !== undefined) updates.color = dto.color;
 
-    // Invalidate cache
     this.roleCache.delete(id);
 
     return this.customRoleModel.findByIdAndUpdate(id, updates, { new: true });
@@ -181,12 +144,6 @@ export class PermissionsService {
     return { message: `Role "${role.name}" deleted` };
   }
 
-  // ── UTILITY ───────────────────────────────────────────────────────────────────
-
-  /**
-   * Get the permission matrix for all built-in roles.
-   * Useful for frontend to render permission grids.
-   */
   getPermissionMatrix(): {
     resources: string[];
     actions: string[];
@@ -208,9 +165,6 @@ export class PermissionsService {
     return { resources, actions, roles };
   }
 
-  /**
-   * Compare two roles — returns the permissions diff.
-   */
   async compareRoles(
     role1: string,
     role2: string,
@@ -225,14 +179,11 @@ export class PermissionsService {
     };
   }
 
-  // ── PRIVATE ───────────────────────────────────────────────────────────────────
-
   private async hasCustomRolePermission(roleId: string, permission: string): Promise<boolean> {
-    // Check cache
+
     const cached = this.roleCache.get(roleId);
     if (cached) return cached.has(permission);
 
-    // Load from DB
     const role = await this.customRoleModel.findById(roleId);
     if (!role || !role.isActive) return false;
 
