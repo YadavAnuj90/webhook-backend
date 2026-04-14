@@ -42,7 +42,7 @@ export class PlaygroundController {
     const timeout = Math.min(dto.timeout || 10000, 30000);
     try {
       const res = await axios({
-        method, url: dto.url, data: dto.payload,
+        method, url: dto.url, data: dto.body,
         headers: { 'Content-Type': 'application/json', 'X-WebhookOS-Test': '1', 'User-Agent': 'WebhookOS-Playground/1.0', ...dto.headers },
         timeout, validateStatus: () => true,
       });
@@ -53,7 +53,7 @@ export class PlaygroundController {
         latency, headers: res.headers as Record<string, any>,
         body: typeof res.data === 'string' ? res.data.substring(0, 4096) : res.data,
         sentAt: new Date().toISOString(),
-        curl: `curl -X ${method} "${dto.url}" \\\n  -H "Content-Type: application/json" \\\n${Object.entries(dto.headers || {}).map(([k, v]) => `  -H "${k}: ${v}" \\\n`).join('')}  -d '${JSON.stringify(dto.payload || {})}'`,
+        curl: `curl -X ${method} "${dto.url}" \\\n  -H "Content-Type: application/json" \\\n${Object.entries(dto.headers || {}).map(([k, v]) => `  -H "${k}: ${v}" \\\n`).join('')}  -d '${JSON.stringify(dto.body || {})}'`,
       };
     } catch (err: any) {
       return { success: false, status: 0, latency: Date.now() - start, error: err.message, sentAt: new Date().toISOString() };

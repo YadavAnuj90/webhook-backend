@@ -18,7 +18,9 @@ import {
   SignatureScheme,
   EndpointType,
   EndpointAuthType,
+  decryptEndpointSecrets,
 } from '../endpoints/schemas/endpoint.schema';
+import { assertSafeUrl, buildPinnedAgent, SsrfBlocked } from '../../utils/safe-http';
 import { EndpointRateLimiterService } from '../endpoints/endpoint-rate-limiter.service';
 import { FilterEngineService } from '../../utils/filter-engine.service';
 import { AnalyticsService } from '../analytics/analytics.service';
@@ -63,8 +65,10 @@ export class DeliveryService {
     const event = await this.eventModel.findById(eventId);
     if (!event) return;
 
-    const endpoint = await this.endpointModel.findById(event.endpointId);
-    if (!endpoint || endpoint.status !== EndpointStatus.ACTIVE) return;
+    const endpointRaw = await this.endpointModel.findById(event.endpointId);
+    if (!endpointRaw || endpointRaw.status !== EndpointStatus.ACTIVE) return;
+    // Decrypt sensitive fields into an in-memory copy (never persisted back).
+    const endpoint = decryptEndpointSecrets(endpointRaw) as Endpoint;
 
     // ─── 0. FEATURE 18: Check Maintenance Windows ────────────────────────────
     if (isInMaintenanceWindow(endpoint.maintenanceWindows)) {
@@ -237,8 +241,36 @@ export class DeliveryService {
       endpoint.canaryPercent > 0 &&
       endpoint.canaryUrl &&
       Math.random() * 100 < endpoint.canaryPercent;
-    const targetUrl = isCanary ? endpoint.canaryUrl : endpoint.url;
-    const configForDelivery = { ...axiosConfig, url: targetUrl };
+    const targetUrl = isCanary ? endpoint.canaryUrl! : endpoint.url;
+
+    // ─── SSRF defence: validate target, block private IPs, pin resolved IP ───
+    let safe: { url: URL; ip: string; family: 4 | 6 };
+    try {
+      safe = await assertSafeUrl(targetUrl);
+    } catch (err: any) {
+      const ssrf = err instanceof SsrfBlocked ? err.message : `URL validation failed: ${err?.message || err}`;
+      await this.handleDeliveryFailure(event, endpoint, { message: ssrf, isAxiosError: false }, 0);
+      return;
+    }
+    const pinnedAgent = buildPinnedAgent(
+      safe.url.protocol as 'http:' | 'https:',
+      safe.ip,
+      safe.family,
+      // Reuse MTLS certs if already configured for this endpoint
+      endpoint.authType === EndpointAuthType.MTLS && endpoint.mtlsConfig
+        ? { cert: endpoint.mtlsConfig.certificate, key: endpoint.mtlsConfig.privateKey, ca: endpoint.mtlsConfig.caCertificate || undefined, rejectUnauthorized: true }
+        : {},
+    );
+    const configForDelivery: AxiosRequestConfig = {
+      ...axiosConfig,
+      url: targetUrl,
+      maxRedirects: 0,
+      httpAgent:  safe.url.protocol === 'http:'  ? pinnedAgent : undefined,
+      httpsAgent: safe.url.protocol === 'https:' ? pinnedAgent : undefined,
+      // Defence in depth: cap response size in memory.
+      maxContentLength: 2 * 1024 * 1024,
+      maxBodyLength:    Math.min(endpoint.maxPayloadBytes || 2 * 1024 * 1024, 10 * 1024 * 1024),
+    };
 
     const deliveryFn = () =>
       axios({ ...configForDelivery, validateStatus: () => true });
@@ -329,18 +361,23 @@ export class DeliveryService {
           latencyMs,
         });
 
-        // FEATURE 12: Fire-and-forget shadow delivery
+        // FEATURE 12: Fire-and-forget shadow delivery (SSRF-checked)
         if (endpoint.shadowUrl) {
-          axios
-            .post(endpoint.shadowUrl, deliveryPayload, {
-              timeout: 5000,
-              headers: {
-                'Content-Type': 'application/json',
-                'X-Shadow-Delivery': 'true',
-                ...endpoint.headers,
-              },
-            })
-            .catch(() => {}); // intentionally swallowed
+          (async () => {
+            try {
+              const shadowSafe = await assertSafeUrl(endpoint.shadowUrl!);
+              const shadowAgent = buildPinnedAgent(shadowSafe.url.protocol as 'http:' | 'https:', shadowSafe.ip, shadowSafe.family);
+              await axios.post(endpoint.shadowUrl!, deliveryPayload, {
+                timeout: 5000,
+                maxRedirects: 0,
+                httpAgent:  shadowSafe.url.protocol === 'http:'  ? shadowAgent : undefined,
+                httpsAgent: shadowSafe.url.protocol === 'https:' ? shadowAgent : undefined,
+                headers: { 'Content-Type': 'application/json', 'X-Shadow-Delivery': 'true', ...endpoint.headers },
+              });
+            } catch (err: any) {
+              this.logger.debug(`Shadow delivery skipped: ${err?.message || err}`);
+            }
+          })();
         }
       } else {
         // Treat non-2xx as failure
@@ -592,7 +629,11 @@ export class DeliveryService {
   async replay(eventId: string): Promise<void> {
     const event = await this.eventModel.findByIdAndUpdate(eventId, { status: EventStatus.PENDING, retryCount: 0, nextRetryAt: null, lastError: null }, { new: true });
     if (!event) throw new Error(`Event ${eventId} not found`);
-    await this.webhookQueue.add({ eventId }, { attempts: 1 });
+    await this.webhookQueue.add(
+      'deliver',
+      { eventId },
+      { attempts: 1, jobId: `replay-${eventId}-${Date.now()}` },
+    );
     this.metrics.webhooksReplayed.inc({ project_id: event.projectId });
   }
 
@@ -623,6 +664,7 @@ export class DeliveryService {
     if (!nextRetryAt) return;
     const delay = nextRetryAt.getTime() - Date.now();
     await this.webhookQueue.add(
+      'deliver',
       { eventId: event.id },
       {
         delay,

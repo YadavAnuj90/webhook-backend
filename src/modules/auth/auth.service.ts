@@ -116,6 +116,8 @@ export class AuthService {
     const user = await this.userModel.findOne({ email: email.toLowerCase() });
     if (!user) throw new UnauthorizedException('Invalid credentials');
     if (user.status === UserStatus.SUSPENDED) throw new UnauthorizedException('Account suspended');
+    // SSO-only accounts may have no passwordHash; block password login explicitly.
+    if (!user.passwordHash) throw new UnauthorizedException('Password login not available for this account');
     const valid = await bcrypt.compare(password, user.passwordHash);
     if (!valid) {
       await this.auditService.log({ userId: user.id, userEmail: user.email, action: AuditAction.LOGIN, ipAddress: ip, outcome: 'failure' });
@@ -240,6 +242,7 @@ export class AuthService {
   async changePassword(userId: string, oldPassword: string, newPassword: string, ip: string) {
     const user = await this.userModel.findById(userId);
     if (!user) throw new NotFoundException('User not found');
+    if (!user.passwordHash) throw new BadRequestException('No password set — use password reset to configure one');
     const valid = await bcrypt.compare(oldPassword, user.passwordHash);
     if (!valid) throw new UnauthorizedException('Current password incorrect');
     const passwordHash = await bcrypt.hash(newPassword, 12);

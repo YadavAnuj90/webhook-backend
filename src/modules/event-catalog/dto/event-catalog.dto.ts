@@ -30,6 +30,11 @@ export class CreateEventTypeDto {
 }
 
 export class ValidatePayloadDto {
+  @ApiProperty({ example: 'order.created', description: 'Event type name to validate against' })
+  @IsString()
+  @IsNotEmpty()
+  eventType: string;
+
   @ApiProperty({ description: 'Payload to validate against the event type schema' })
   @IsObject()
   payload: Record<string, any>;
@@ -51,4 +56,9 @@ export class SimulateEventDto {
   @IsOptional()
   @IsObject()
   payload?: Record<string, any>;
+
+  @ApiPropertyOptional({ description: 'Field overrides to merge into the event type sample payload' })
+  @IsOptional()
+  @IsObject()
+  overrides?: Record<string, any>;
 }

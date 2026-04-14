@@ -1,5 +1,6 @@
 import { Prop, Schema, SchemaFactory } from '@nestjs/mongoose';
 import { Document } from 'mongoose';
+import { PayloadCrypto } from '../../../utils/payload-crypto';
 
 export enum EndpointStatus   { ACTIVE = 'active', PAUSED = 'paused', DISABLED = 'disabled' }
 export enum SignatureScheme  { HMAC_SHA256 = 'hmac-sha256', ED25519 = 'ed25519' }
@@ -129,6 +130,69 @@ export class Endpoint extends Document {
 }
 
 export const EndpointSchema = SchemaFactory.createForClass(Endpoint);
+
+// ─── Encryption-at-rest for sensitive credentials ─────────────────────────
+// Fields that must be encrypted before touching the DB. `PayloadCrypto` is
+// a no-op when PAYLOAD_ENCRYPTION_KEY is unset, so dev workflows still work.
+const ENC_PREFIX = 'enc:';
+const isEncrypted = (v: any) => typeof v === 'string' && v.startsWith(ENC_PREFIX);
+
+function encryptIfNeeded(v: any): any {
+  if (!v || typeof v !== 'string' || isEncrypted(v) || !PayloadCrypto.isEnabled()) return v;
+  return PayloadCrypto.encrypt(v);
+}
+
+EndpointSchema.pre('save', function (next) {
+  try {
+    const doc: any = this;
+    if (doc.isModified('secret'))       doc.secret       = encryptIfNeeded(doc.secret);
+    if (doc.isModified('bearerToken'))  doc.bearerToken  = encryptIfNeeded(doc.bearerToken);
+    if (doc.isModified('oauth2Config') && doc.oauth2Config?.clientSecret) {
+      doc.oauth2Config.clientSecret = encryptIfNeeded(doc.oauth2Config.clientSecret);
+    }
+    if (doc.isModified('mtlsConfig') && doc.mtlsConfig?.privateKey) {
+      doc.mtlsConfig.privateKey = encryptIfNeeded(doc.mtlsConfig.privateKey);
+    }
+    if (doc.isModified('storageConfig')) {
+      if (doc.storageConfig?.secretAccessKey)   doc.storageConfig.secretAccessKey   = encryptIfNeeded(doc.storageConfig.secretAccessKey);
+      if (doc.storageConfig?.serviceAccountKey) doc.storageConfig.serviceAccountKey = encryptIfNeeded(doc.storageConfig.serviceAccountKey);
+    }
+    next();
+  } catch (err) { next(err as any); }
+});
+
+// Also intercept findOneAndUpdate / updateOne that $set sensitive fields.
+function encryptUpdatePatch(this: any, next: Function) {
+  try {
+    const upd = this.getUpdate?.() || {};
+    const $set = upd.$set || upd;
+    if ($set) {
+      if (typeof $set.secret === 'string')      $set.secret      = encryptIfNeeded($set.secret);
+      if (typeof $set.bearerToken === 'string') $set.bearerToken = encryptIfNeeded($set.bearerToken);
+      if ($set.oauth2Config?.clientSecret)      $set.oauth2Config.clientSecret      = encryptIfNeeded($set.oauth2Config.clientSecret);
+      if ($set.mtlsConfig?.privateKey)          $set.mtlsConfig.privateKey          = encryptIfNeeded($set.mtlsConfig.privateKey);
+      if ($set.storageConfig?.secretAccessKey)   $set.storageConfig.secretAccessKey   = encryptIfNeeded($set.storageConfig.secretAccessKey);
+      if ($set.storageConfig?.serviceAccountKey) $set.storageConfig.serviceAccountKey = encryptIfNeeded($set.storageConfig.serviceAccountKey);
+    }
+    next();
+  } catch (err) { next(err as any); }
+}
+EndpointSchema.pre('findOneAndUpdate', encryptUpdatePatch as any);
+EndpointSchema.pre('updateOne',        encryptUpdatePatch as any);
+EndpointSchema.pre('updateMany',       encryptUpdatePatch as any);
+
+/** Helper: decrypt the sensitive fields on a freshly-loaded endpoint. */
+export function decryptEndpointSecrets<T = any>(ep: T | null): T | null {
+  if (!ep) return ep;
+  const e: any = ep;
+  if (typeof e.secret === 'string')      e.secret      = PayloadCrypto.decrypt(e.secret);
+  if (typeof e.bearerToken === 'string') e.bearerToken = PayloadCrypto.decrypt(e.bearerToken);
+  if (e.oauth2Config?.clientSecret) e.oauth2Config.clientSecret = PayloadCrypto.decrypt(e.oauth2Config.clientSecret);
+  if (e.mtlsConfig?.privateKey)     e.mtlsConfig.privateKey     = PayloadCrypto.decrypt(e.mtlsConfig.privateKey);
+  if (e.storageConfig?.secretAccessKey)   e.storageConfig.secretAccessKey   = PayloadCrypto.decrypt(e.storageConfig.secretAccessKey);
+  if (e.storageConfig?.serviceAccountKey) e.storageConfig.serviceAccountKey = PayloadCrypto.decrypt(e.storageConfig.serviceAccountKey);
+  return ep;
+}
 
 // DELIVERY HOT PATH: active endpoints for a project, by event type
 // Partial index on status:'active' — paused/disabled endpoints not indexed here

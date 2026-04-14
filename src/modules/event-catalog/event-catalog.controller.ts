@@ -114,7 +114,7 @@ export class EventCatalogController {
     const result = await this.svc.validatePayload(
       projectId,
       name,
-      dto.payload,
+      dto.payload ?? {},
     );
     return res.status(result.valid ? 200 : 422).json(result);
   }

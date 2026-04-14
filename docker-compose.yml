@@ -1,64 +1,146 @@
 version: '3.8'
 
+# ──────────────────────────────────────────────────────────────────────
+# WebhookOS backend + dependencies.
+# ENV values marked with `${VAR:?required}` MUST be supplied via `.env`
+# at the compose file's cwd; they are intentionally not defaulted so
+# production-like secrets cannot silently be left at their dev values.
+#
+# Profiles:
+#   (default)  app + mongo + redis                   — minimum to run the API
+#   tools      + bull-board                          — queue dashboard
+#   observ     + prometheus + grafana                — metrics stack
+# Usage:
+#   docker compose up -d
+#   docker compose --profile tools --profile observ up -d
+# ──────────────────────────────────────────────────────────────────────
+
 services:
   app:
-    build: .
-    ports:
-      - '3000:3000'
-    environment:
-      - NODE_ENV=production
-      - MONGODB_URI=mongodb://mongo:27017/webhook-system-v2
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-      - JWT_SECRET=change-this-in-production
-      - METRICS_ENABLED=true
-    depends_on: [mongo, redis]
-    volumes:
-      - ./logs:/app/logs
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: webhookos-backend:local
     restart: unless-stopped
+    ports:
+      - '${APP_PORT:-3000}:3000'
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      MONGODB_URI: mongodb://mongo:27017/${MONGO_DB:-webhookos}
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required}
+      PAYLOAD_ENCRYPTION_KEY: ${PAYLOAD_ENCRYPTION_KEY:?PAYLOAD_ENCRYPTION_KEY is required}
+      METRICS_ENABLED: 'true'
+      METRICS_ALLOW_IPS: ${METRICS_ALLOW_IPS:-127.0.0.1,::1}
+      # SSRF hardening
+      ALLOW_HTTP_DEV: 'false'
+      # Retry worker tuning
+      DLQ_RETENTION_DAYS: ${DLQ_RETENTION_DAYS:-90}
+      QUEUE_BACKLOG_WARN: ${QUEUE_BACKLOG_WARN:-100000}
+      REQUEST_TIMEOUT_MS: ${REQUEST_TIMEOUT_MS:-30000}
+    depends_on:
+      mongo:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    volumes:
+      - app_logs:/app/logs
+      - app_uploads:/app/uploads
+    healthcheck:
+      test: ['CMD', 'curl', '-fsS', 'http://127.0.0.1:3000/health/readiness']
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    deploy:
+      resources:
+        limits:
+          memory: 1g
+    networks: [webhookos]
 
   mongo:
     image: mongo:7
-    ports: ['27017:27017']
+    restart: unless-stopped
+    command: ['--bind_ip_all', '--wiredTigerCacheSizeGB', '0.5']
     volumes:
       - mongo_data:/data/db
+    healthcheck:
+      test: ['CMD', 'mongosh', '--quiet', '--eval', "db.adminCommand('ping').ok"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    networks: [webhookos]
 
   redis:
     image: redis:7-alpine
-    ports: ['6379:6379']
-    command: redis-server --appendonly yes
+    restart: unless-stopped
+    command: >
+      redis-server
+        --appendonly yes
+        --maxmemory-policy noeviction
+        ${REDIS_PASSWORD:+--requirepass ${REDIS_PASSWORD}}
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 15s
+      timeout: 3s
+      retries: 5
+      start_period: 5s
+    networks: [webhookos]
 
-  # Bull queue dashboard
   bull-board:
     image: deadly0/bull-board
-    ports: ['3001:3000']
+    restart: unless-stopped
+    profiles: ['tools']
+    ports: ['${BULL_BOARD_PORT:-3001}:3000']
     environment:
-      - REDIS_HOST=redis
-      - REDIS_PORT=6379
-    depends_on: [redis]
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    depends_on:
+      redis:
+        condition: service_healthy
+    networks: [webhookos]
 
-  # Prometheus
   prometheus:
     image: prom/prometheus:latest
+    restart: unless-stopped
+    profiles: ['observ']
     ports: ['9090:9090']
     volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - prometheus_data:/prometheus
     command:
       - '--config.file=/etc/prometheus/prometheus.yml'
+      - '--storage.tsdb.retention.time=15d'
+    networks: [webhookos]
 
-  # Grafana
   grafana:
     image: grafana/grafana:latest
-    ports: ['3002:3000']
+    restart: unless-stopped
+    profiles: ['observ']
+    ports: ['${GRAFANA_PORT:-3002}:3000']
     environment:
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?GRAFANA_ADMIN_PASSWORD is required}
+      GF_USERS_ALLOW_SIGN_UP: 'false'
     volumes:
       - grafana_data:/var/lib/grafana
     depends_on: [prometheus]
+    networks: [webhookos]
 
 volumes:
   mongo_data:
   redis_data:
+  app_logs:
+  app_uploads:
+  prometheus_data:
   grafana_data:
+
+networks:
+  webhookos:
+    driver: bridge

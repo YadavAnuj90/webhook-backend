@@ -1,0 +1,47 @@
+# Build artifacts & deps — rebuilt inside the container.
+node_modules
+dist
+coverage
+.npm
+.next
+
+# Local logs & uploads — never bake user data into the image.
+logs
+uploads
+
+# Editor / OS noise.
+.vscode
+.idea
+.DS_Store
+*.swp
+
+# Git + CI metadata.
+.git
+.gitignore
+.github
+.gitlab-ci.yml
+
+# Env files — must be injected at runtime, never baked.
+.env
+.env.*
+!.env.example
+
+# Docker & helm files that don't need to live inside the image.
+Dockerfile
+Dockerfile.*
+docker-compose*.yml
+helm
+prometheus.yml
+
+# Tests & docs.
+test
+tests
+**/*.spec.ts
+**/*.test.ts
+README.md
+docs
+
+# Misc dev scripts not used at runtime.
+reset-password.js
+set-super-admin.js
+cli

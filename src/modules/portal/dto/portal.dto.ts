@@ -10,11 +10,11 @@ export class CreatePortalTokenDto {
   @IsNotEmpty()
   projectId: string;
 
-  @ApiPropertyOptional({ example: 'Acme Corp' })
-  @IsOptional()
+  @ApiProperty({ example: 'Acme Corp' })
   @IsString()
+  @IsNotEmpty()
   @MaxLength(100)
-  customerName?: string;
+  customerName: string;
 
   @ApiPropertyOptional({ example: 'https://acme.com/logo.png' })
   @IsOptional()
@@ -43,5 +43,5 @@ export class UpdateSubscriptionsDto {
   @ApiProperty({ example: ['order.created', 'order.updated'], type: [String] })
   @IsArray()
   @IsString({ each: true })
-  eventTypes: string[];
+  subscribedEventTypes: string[];
 }

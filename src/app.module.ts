@@ -7,6 +7,10 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
+// Optional daily-rotate transport — falls back gracefully if not installed
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+let DailyRotateFile: any = null;
+try { DailyRotateFile = require('winston-daily-rotate-file'); } catch { /* optional */ }
 
 import { AuthModule } from './modules/auth/auth.module';
 import { UsersModule } from './modules/users/users.module';
@@ -63,18 +67,51 @@ import { ProjectAccessModule } from './common/guards/project-access.module';
               winston.format.printf(({ timestamp, level, message, context, stack }) =>
                 `${timestamp} [${level}] [${context || 'App'}] ${message}${stack ? '\n' + stack : ''}`),
             );
+        const jsonFmt = winston.format.combine(
+          winston.format.timestamp(),
+          winston.format.errors({ stack: true }),
+          winston.format.json(),
+        );
+        // Prefer daily rotate if available; fall back to size-capped files.
+        const errorTransport = DailyRotateFile
+          ? new DailyRotateFile({
+              filename: 'logs/error-%DATE%.log',
+              datePattern: 'YYYY-MM-DD',
+              zippedArchive: true,
+              maxSize: '20m',
+              maxFiles: '14d',
+              level: 'error',
+              format: jsonFmt,
+            })
+          : new winston.transports.File({
+              filename: 'logs/error.log',
+              level: 'error',
+              maxsize: 20 * 1024 * 1024,
+              maxFiles: 5,
+              tailable: true,
+              format: jsonFmt,
+            });
+        const combinedTransport = DailyRotateFile
+          ? new DailyRotateFile({
+              filename: 'logs/combined-%DATE%.log',
+              datePattern: 'YYYY-MM-DD',
+              zippedArchive: true,
+              maxSize: '50m',
+              maxFiles: '14d',
+              format: jsonFmt,
+            })
+          : new winston.transports.File({
+              filename: 'logs/combined.log',
+              maxsize: 50 * 1024 * 1024,
+              maxFiles: 5,
+              tailable: true,
+              format: jsonFmt,
+            });
         return {
           transports: [
             new winston.transports.Console({ format: consoleFormat }),
-            new winston.transports.File({
-              filename: 'logs/error.log',
-              level: 'error',
-              format: winston.format.combine(winston.format.timestamp(), winston.format.errors({ stack: true }), winston.format.json()),
-            }),
-            new winston.transports.File({
-              filename: 'logs/combined.log',
-              format: winston.format.combine(winston.format.timestamp(), winston.format.json()),
-            }),
+            errorTransport,
+            combinedTransport,
           ],
         };
       },
@@ -89,14 +126,39 @@ import { ProjectAccessModule } from './common/guards/project-access.module';
           host: cfg.get('REDIS_HOST', 'localhost'),
           port: cfg.get<number>('REDIS_PORT', 6379),
           password: cfg.get('REDIS_PASSWORD') || undefined,
+          maxRetriesPerRequest: null,
+          enableReadyCheck: false,
+          retryStrategy: (times: number) => Math.min(1000 * Math.pow(2, times), 30_000),
+        },
+        prefix: cfg.get('BULL_PREFIX', 'bull'),
+        defaultJobOptions: {
+          attempts: 1,               // retries are re-scheduled explicitly by DeliveryService
+          removeOnComplete: { age: 3600, count: 5_000 },    // keep 1h / 5k for debugging
+          removeOnFail:     { age: 7 * 86400, count: 20_000 }, // keep 7d / 20k
+          backoff: { type: 'exponential', delay: 2_000 },
+        },
+        settings: {
+          // Time a job can hold the lock before BullMQ reclaims it
+          lockDuration: 60_000,
+          stalledInterval: 30_000,
+          maxStalledCount: 2,
         },
       }),
       inject: [ConfigService],
     }),
-    ThrottlerModule.forRoot([
-      { name: 'global', ttl: 60_000, limit: 1000 },         // 1000 req/min global (dashboard loads ~30+ parallel calls)
-      { name: 'auth',   ttl: 60_000, limit: 10   },         // 10 req/min on auth routes (login/register/forgot-password)
-    ]),
+    ThrottlerModule.forRoot({
+      throttlers: [
+        { name: 'global', ttl: 60_000, limit: 1000 },       // 1000 req/min global
+        { name: 'auth',   ttl: 60_000, limit: 10   },       // 10 req/min on auth routes
+        { name: 'authIp', ttl: 60_000, limit: 20   },       // per-IP fallback on auth routes
+      ],
+      // Prefer X-Forwarded-For when behind a trusted proxy, else peer IP.
+      getTracker: (req: any) =>
+        (req.headers['x-forwarded-for']?.split(',')[0].trim())
+        || req.ip
+        || req.connection?.remoteAddress
+        || 'anon',
+    }),
     ScheduleModule.forRoot(),
 
     // Core modules

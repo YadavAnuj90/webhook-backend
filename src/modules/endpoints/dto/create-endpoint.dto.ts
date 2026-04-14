@@ -1,9 +1,10 @@
 import {
-  IsString, IsNotEmpty, IsUrl, IsOptional, IsBoolean,
-  IsNumber, Min, Max, IsArray, IsObject, IsEnum, MaxLength, IsIn,
+  IsString, IsNotEmpty, IsOptional, IsBoolean,
+  IsNumber, Min, Max, IsArray, IsObject, IsEnum, MaxLength, IsIn, ValidateIf,
 } from 'class-validator';
 import { PartialType } from '@nestjs/swagger';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { IsSafeUrl } from '../../../common/decorators/is-safe-url.validator';
 
 export enum EndpointAuthType {
   NONE        = 'none',
@@ -21,7 +22,7 @@ export enum RetryStrategy {
 
 export class CreateEndpointDto {
   @ApiProperty({ example: 'https://your-server.com/webhooks' })
-  @IsUrl({ protocols: ['http', 'https'], require_tld: false })
+  @IsSafeUrl()
   url: string;
 
   @ApiProperty({ example: 'Production Endpoint' })

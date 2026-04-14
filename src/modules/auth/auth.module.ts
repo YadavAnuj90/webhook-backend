@@ -5,6 +5,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { MongooseModule } from '@nestjs/mongoose';
 import { AuthController } from './auth.controller';
 import { AuthService } from './auth.service';
+import { AuthSweeperService } from './auth-sweeper.service';
 import { TwoFactorService } from './two-factor.service';
 import { JwtStrategy } from './strategies/jwt.strategy';
 import { GoogleStrategy } from './strategies/google.strategy';
@@ -34,7 +35,7 @@ import { BillingModule } from '../billing/billing.module';
     BillingModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, TwoFactorService, JwtStrategy, GoogleStrategy],
+  providers: [AuthService, AuthSweeperService, TwoFactorService, JwtStrategy, GoogleStrategy],
   exports: [AuthService, TwoFactorService, JwtModule],
 })
 export class AuthModule {}

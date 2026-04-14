@@ -115,4 +115,37 @@ export class RetryWorkerService {
     await this.webhookQueue.clean(30 * 24 * 3600 * 1000, 'failed');   // 30 days
     this.logger.log('🧹 Cleaned old queue jobs');
   }
+
+  /**
+   * Every day at 2am: purge DLQ events older than DLQ_RETENTION_DAYS (default 90).
+   * Prevents the dead-letter collection from growing unbounded.
+   */
+  @Cron('0 2 * * *')
+  async purgeOldDlqEvents() {
+    const retentionDays = parseInt(process.env.DLQ_RETENTION_DAYS || '90', 10);
+    const cutoff = new Date(Date.now() - retentionDays * 86_400_000);
+    const { deletedCount } = await this.eventModel.deleteMany({
+      status: EventStatus.DEAD,
+      deadAt: { $lt: cutoff },
+    });
+    if (deletedCount) this.logger.log(`🗑️  Purged ${deletedCount} DLQ events older than ${retentionDays}d`);
+  }
+
+  /**
+   * Every hour: queue-depth guardrail. Emits a warning when backlog
+   * crosses thresholds so alerting can page on-call.
+   */
+  @Cron(CronExpression.EVERY_HOUR)
+  async backlogGuardrail() {
+    const waiting = await this.webhookQueue.getWaitingCount();
+    const threshold = parseInt(process.env.QUEUE_BACKLOG_WARN || '100000', 10);
+    if (waiting >= threshold) {
+      this.logger.warn(`🚨 Queue backlog ${waiting} ≥ ${threshold} — consider scaling workers`);
+      await this.notificationsService.sendAlert({
+        level: 'warning',
+        title: 'Webhook queue backlog high',
+        message: `${waiting} jobs waiting (threshold ${threshold}).`,
+      }).catch(() => {});
+    }
+  }
 }

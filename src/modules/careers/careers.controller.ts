@@ -85,7 +85,7 @@ export class CareersPublicController {
   @ApiResponse({ status: 409, description: 'Already applied for this position' })
   async apply(
     @Body() body: any,
-    @UploadedFile() resume?: Express.Multer.File,
+    @UploadedFile() resume?: any /* Express.Multer.File */,
   ) {
     return this.svc.submitApplication({
       ...body,

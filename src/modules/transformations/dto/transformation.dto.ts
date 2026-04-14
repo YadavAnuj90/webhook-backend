@@ -37,6 +37,10 @@ export class CreateTransformationDto {
 export class UpdateTransformationDto extends PartialType(CreateTransformationDto) {}
 
 export class PreviewTransformationDto {
+  @ApiProperty({ description: 'Transformation rule object (same shape as create body)' })
+  @IsObject()
+  transformation: Record<string, any>;
+
   @ApiProperty({ description: 'Sample payload to transform' })
   @IsObject()
   payload: Record<string, any>;

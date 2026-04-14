@@ -71,6 +71,31 @@ async function bootstrap() {
   app.use(express.json({ limit: '1mb' }));
   app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
+  // ── Global request timeout: prevents slow-loris / stuck connections ───────
+  const REQUEST_TIMEOUT_MS = parseInt(process.env.REQUEST_TIMEOUT_MS || '30000', 10);
+  app.use((req: any, res: any, next: any) => {
+    // Long-poll / SSE / websocket endpoints may want to opt out
+    if (req.url.startsWith('/api/v1/realtime') || req.url.startsWith('/socket.io')) return next();
+    req.setTimeout(REQUEST_TIMEOUT_MS, () => {
+      if (!res.headersSent) res.status(504).json({ statusCode: 504, message: 'Request timed out', path: req.url });
+      req.destroy();
+    });
+    next();
+  });
+
+  // ── Metrics endpoint guard: allow-list by IP or require METRICS_TOKEN ─────
+  const metricsAllow = (process.env.METRICS_ALLOW_IPS || '').split(',').map(s => s.trim()).filter(Boolean);
+  const metricsToken = process.env.METRICS_TOKEN || '';
+  app.use((req: any, res: any, next: any) => {
+    if (!req.url.startsWith('/api/v1/metrics') && !req.url.startsWith('/metrics')) return next();
+    const ip = (req.headers['x-forwarded-for']?.split(',')[0].trim()) || req.ip || req.connection?.remoteAddress || '';
+    const tokenOk = metricsToken && req.headers['x-metrics-token'] === metricsToken;
+    const ipOk    = metricsAllow.length > 0 && metricsAllow.includes(ip);
+    if (!metricsToken && metricsAllow.length === 0) return next(); // not configured → open (dev)
+    if (tokenOk || ipOk) return next();
+    return res.status(403).json({ statusCode: 403, message: 'Metrics endpoint forbidden' });
+  });
+
   // ── Static file serving (resume uploads) ─────────────────────────────────
   app.use('/uploads', express.static(join(process.cwd(), 'uploads')));
 
@@ -165,12 +190,36 @@ async function bootstrap() {
   logger.log(`📚 Swagger docs: http://localhost:${port}/api/docs`);
 
   // ── SIGTERM / SIGINT graceful close ───────────────────────────────────────
+  let shuttingDown = false;
   const shutdown = async (signal: string) => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     logger.log(`Received ${signal} — closing server gracefully…`, 'Bootstrap');
-    await app.close();
-    process.exit(0);
+    const forceExit = setTimeout(() => {
+      logger.error('Graceful shutdown took too long — forcing exit', 'Bootstrap');
+      process.exit(1);
+    }, 30_000);
+    forceExit.unref();
+    try {
+      // app.close() triggers OnModuleDestroy on all providers, which closes
+      // BullMQ queues / processors and Mongoose connections.
+      await app.close();
+      clearTimeout(forceExit);
+      process.exit(0);
+    } catch (err) {
+      logger.error(`Error during shutdown: ${(err as Error)?.message}`, (err as Error)?.stack, 'Bootstrap');
+      clearTimeout(forceExit);
+      process.exit(1);
+    }
   };
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT',  () => shutdown('SIGINT'));
+  process.on('unhandledRejection', (reason: any) => {
+    logger.error(`UnhandledRejection: ${reason?.message || reason}`, reason?.stack, 'Bootstrap');
+  });
+  process.on('uncaughtException', (err: Error) => {
+    logger.error(`UncaughtException: ${err.message}`, err.stack, 'Bootstrap');
+    shutdown('uncaughtException');
+  });
 }
 bootstrap();

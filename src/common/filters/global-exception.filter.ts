@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common';
 import { Request, Response } from 'express';
+import { redactUrl } from '../interceptors/logging.interceptor';
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 let Sentry: any = null;
@@ -60,10 +61,11 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     const req    = ctx.getRequest<Request>();
     const status = resolveStatus(exception);
 
-    // ── Log ────────────────────────────────────────────────────────────────
+    // ── Log (with redacted URL) ────────────────────────────────────────────
     // Always log full stack internally; never send it to the client in prod
+    const safeUrl = redactUrl(req.url || '');
     const stack = exception instanceof Error ? exception.stack : String(exception);
-    this.logger.error(`${req.method} ${req.url} → ${status}`, stack);
+    this.logger.error(`${req.method} ${safeUrl} → ${status}`, stack);
 
     // ── Forward 5xx to Sentry ──────────────────────────────────────────────
     if (status >= 500 && Sentry) {
@@ -81,10 +83,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
         ? { errors: (exception.getResponse() as any).message }
         : {};
 
+    const requestId = (req as any).requestId || res.getHeader('x-request-id');
     res.status(status).json({
       statusCode: status,
       timestamp: new Date().toISOString(),
-      path: req.url,
+      path: safeUrl,
+      requestId,
       message,
       ...validationErrors,
       // Only include stack trace in development

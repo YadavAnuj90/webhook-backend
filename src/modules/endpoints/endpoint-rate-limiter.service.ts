@@ -12,90 +12,100 @@ export interface RateLimitResult {
   limitType?: 'minute' | 'hour' | 'day';
 }
 
+/**
+ * Rate-limit check is race-free: we roll the expired windows first with a
+ * conditional `$set` guarded by `$expr` on `minuteResetAt < now`, then
+ * increment counters atomically and read the resulting document back.
+ *
+ * This replaces the previous read-then-write pattern which could
+ * double-count under concurrent deliveries.
+ */
 @Injectable()
 export class EndpointRateLimiterService {
   private readonly logger = new Logger(EndpointRateLimiterService.name);
 
   constructor(@InjectModel(Endpoint.name) private endpointModel: Model<Endpoint>) {}
 
-  /**
-   * Check if endpoint is within rate limits.
-   * Returns { allowed, reason?, retryAfterMs?, limitType? }
-   *
-   * When rate-limited, retryAfterMs tells the caller how long to delay
-   * before the window resets — enabling drip-delivery instead of rejection.
-   */
   async checkRateLimit(endpointId: string): Promise<RateLimitResult> {
-    const endpoint = await this.endpointModel.findById(endpointId);
-    if (!endpoint) return { allowed: false, reason: 'Endpoint not found' };
-
     const now = new Date();
-    const rl = endpoint.rateLimit;
 
-    // Reset counters if window expired
-    const updates: any = {};
+    // Step 1: atomically reset any expired windows.
+    // Using aggregation-pipeline update so each reset is guarded on its own timestamp.
+    const reset = await this.endpointModel.findByIdAndUpdate(
+      endpointId,
+      [
+        {
+          $set: {
+            deliveriesThisMinute: { $cond: [{ $lt: ['$minuteResetAt', now] }, 0, '$deliveriesThisMinute'] },
+            minuteResetAt:        { $cond: [{ $lt: ['$minuteResetAt', now] }, new Date(now.getTime() + 60_000),        '$minuteResetAt'] },
+            deliveriesThisHour:   { $cond: [{ $lt: ['$hourResetAt',   now] }, 0, '$deliveriesThisHour'] },
+            hourResetAt:          { $cond: [{ $lt: ['$hourResetAt',   now] }, new Date(now.getTime() + 3_600_000),     '$hourResetAt'] },
+            deliveriesThisDay:    { $cond: [{ $lt: ['$dayResetAt',    now] }, 0, '$deliveriesThisDay'] },
+            dayResetAt:           { $cond: [{ $lt: ['$dayResetAt',    now] }, new Date(now.getTime() + 86_400_000),    '$dayResetAt'] },
+          },
+        },
+      ],
+      { new: true },
+    ).lean();
 
-    if (!endpoint.minuteResetAt || now > endpoint.minuteResetAt) {
-      updates.deliveriesThisMinute = 0;
-      updates.minuteResetAt = new Date(now.getTime() + 60_000);
-    }
-    if (!endpoint.hourResetAt || now > endpoint.hourResetAt) {
-      updates.deliveriesThisHour = 0;
-      updates.hourResetAt = new Date(now.getTime() + 3_600_000);
-    }
-    if (!endpoint.dayResetAt || now > endpoint.dayResetAt) {
-      updates.deliveriesThisDay = 0;
-      updates.dayResetAt = new Date(now.getTime() + 86_400_000);
-    }
+    if (!reset) return { allowed: false, reason: 'Endpoint not found' };
+    const rl = reset.rateLimit;
 
-    if (Object.keys(updates).length > 0) {
-      await this.endpointModel.findByIdAndUpdate(endpointId, updates);
-      Object.assign(endpoint, updates);
-    }
-
-    // Check limits — return retryAfterMs for drip-delivery queuing
-    if (endpoint.deliveriesThisMinute >= rl.maxPerMinute) {
-      const retryAfterMs = Math.max(0, (endpoint.minuteResetAt?.getTime() || now.getTime() + 60_000) - now.getTime());
+    // Step 2: enforce caps (post-reset counters)
+    if (reset.deliveriesThisMinute >= rl.maxPerMinute) {
       return {
         allowed: false,
         reason: `Rate limit exceeded: ${rl.maxPerMinute}/min`,
-        retryAfterMs,
+        retryAfterMs: Math.max(0, new Date(reset.minuteResetAt!).getTime() - now.getTime()),
         limitType: 'minute',
       };
     }
-    if (endpoint.deliveriesThisHour >= rl.maxPerHour) {
-      const retryAfterMs = Math.max(0, (endpoint.hourResetAt?.getTime() || now.getTime() + 3_600_000) - now.getTime());
+    if (reset.deliveriesThisHour >= rl.maxPerHour) {
       return {
         allowed: false,
         reason: `Rate limit exceeded: ${rl.maxPerHour}/hour`,
-        retryAfterMs,
+        retryAfterMs: Math.max(0, new Date(reset.hourResetAt!).getTime() - now.getTime()),
         limitType: 'hour',
       };
     }
-    if (endpoint.deliveriesThisDay >= rl.maxPerDay) {
-      const retryAfterMs = Math.max(0, (endpoint.dayResetAt?.getTime() || now.getTime() + 86_400_000) - now.getTime());
+    if (reset.deliveriesThisDay >= rl.maxPerDay) {
       return {
         allowed: false,
         reason: `Rate limit exceeded: ${rl.maxPerDay}/day`,
-        retryAfterMs,
+        retryAfterMs: Math.max(0, new Date(reset.dayResetAt!).getTime() - now.getTime()),
         limitType: 'day',
       };
     }
 
-    // Increment counters
-    await this.endpointModel.findByIdAndUpdate(endpointId, {
-      $inc: {
-        deliveriesThisMinute: 1,
-        deliveriesThisHour: 1,
-        deliveriesThisDay: 1,
+    // Step 3: atomic increment — guarded so we don't blow past the caps
+    // if two callers raced past the check above.
+    const inc = await this.endpointModel.findOneAndUpdate(
+      {
+        _id: endpointId,
+        deliveriesThisMinute: { $lt: rl.maxPerMinute },
+        deliveriesThisHour:   { $lt: rl.maxPerHour },
+        deliveriesThisDay:    { $lt: rl.maxPerDay },
       },
-    });
+      { $inc: { deliveriesThisMinute: 1, deliveriesThisHour: 1, deliveriesThisDay: 1 } },
+      { new: true },
+    ).lean();
+
+    if (!inc) {
+      // Lost the race — the winning caller just hit a cap. Tell caller to wait.
+      const nextMinute = new Date(reset.minuteResetAt!).getTime() - now.getTime();
+      return {
+        allowed: false,
+        reason: 'Rate limit race — another delivery hit the cap first',
+        retryAfterMs: Math.max(500, nextMinute),
+        limitType: 'minute',
+      };
+    }
 
     return { allowed: true };
   }
 
   async getCurrentUsage(endpointId: string) {
-    const ep = await this.endpointModel.findById(endpointId);
+    const ep = await this.endpointModel.findById(endpointId).lean();
     if (!ep) return null;
     return {
       minute: { used: ep.deliveriesThisMinute, limit: ep.rateLimit.maxPerMinute, resetsAt: ep.minuteResetAt },
