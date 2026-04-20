@@ -46,6 +46,7 @@ import { SchedulingModule } from './modules/scheduling/scheduling.module';
 import { PermissionsModule } from './modules/permissions/permissions.module';
 import { ProjectAccessModule } from './common/guards/project-access.module';
 import { CacheModule } from './common/cache/cache.module';
+import { NewsletterModule } from './modules/newsletter/newsletter.module';
 
 @Module({
   imports: [
@@ -186,6 +187,8 @@ import { CacheModule } from './common/cache/cache.module';
 
     ProjectAccessModule,
     CacheModule,
+
+    NewsletterModule,
   ],
   providers: [
 
