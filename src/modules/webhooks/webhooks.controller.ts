@@ -22,8 +22,8 @@ import { WEBHOOK_QUEUE } from '../../queue/queue.constants';
 import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
 
 class SendWebhookDto {
-  @ApiProperty({ example: 'payment.success' }) @IsString() eventType: string;
-  @ApiProperty({ example: { orderId: '123', amount: 99.99 } }) @IsObject() payload: Record<string, any>;
+  @ApiProperty({ example: 'payment.success' }) @IsString() eventType!: string;
+  @ApiProperty({ example: { orderId: '123', amount: 99.99 } }) @IsObject() payload!: Record<string, any>;
   @ApiPropertyOptional() @IsOptional() @IsString() idempotencyKey?: string;
 }
 
