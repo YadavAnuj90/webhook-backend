@@ -20,6 +20,7 @@ import { WebhookEvent, EventStatus } from '../events/schemas/event.schema';
 import { Endpoint, EndpointStatus } from '../endpoints/schemas/endpoint.schema';
 import { WEBHOOK_QUEUE } from '../../queue/queue.constants';
 import { IdempotencyKey } from '../../common/decorators/idempotency-key.decorator';
+import { escapeRegex } from '../../utils/regex.util';
 
 class SendWebhookDto {
   @ApiProperty({ example: 'payment.success' }) @IsString() eventType!: string;
@@ -127,7 +128,7 @@ export class WebhooksController {
     const filter: any = { projectId };
     if (endpointId) filter.endpointId = endpointId;
     if (status) filter.status = status;
-    if (eventType) filter.eventType = new RegExp(eventType, 'i');
+    if (eventType) filter.eventType = new RegExp(escapeRegex(eventType), 'i');
 
     const skip = (Number(page) - 1) * Number(limit);
     const [events, total] = await Promise.all([

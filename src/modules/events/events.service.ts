@@ -223,25 +223,42 @@ export class EventsService {
   }
 
   async replayDlq(projectId: string) {
-    const dead = await this.eventModel.find({
-      projectId,
-      status: EventStatus.DEAD,
-    });
-    await Promise.all(
-      dead.map(async (e) => {
-        await this.eventModel.findByIdAndUpdate(e.id, {
-          status: EventStatus.PENDING,
-          retryCount: 0,
-          deadAt: null,
-        });
-        await this.webhookQueue.add(
-          'deliver',
-          { eventId: e.id, requestId: (e as any).requestId ?? null },
-          { attempts: 1, removeOnComplete: true },
+    const BATCH_SIZE = 100;
+    const CONCURRENCY = 10;
+    let totalReplayed = 0;
+    let hasMore = true;
+
+    while (hasMore) {
+      const batch = await this.eventModel
+        .find({ projectId, status: EventStatus.DEAD })
+        .limit(BATCH_SIZE)
+        .lean();
+
+      if (batch.length === 0) { hasMore = false; break; }
+      if (batch.length < BATCH_SIZE) hasMore = false;
+
+      // Process in chunks of CONCURRENCY to avoid overwhelming the queue
+      for (let i = 0; i < batch.length; i += CONCURRENCY) {
+        const chunk = batch.slice(i, i + CONCURRENCY);
+        await Promise.all(
+          chunk.map(async (e) => {
+            await this.eventModel.findByIdAndUpdate(e._id, {
+              status: EventStatus.PENDING,
+              retryCount: 0,
+              deadAt: null,
+            });
+            await this.webhookQueue.add(
+              'deliver',
+              { eventId: String(e._id), requestId: (e as any).requestId ?? null },
+              { attempts: 1, removeOnComplete: true },
+            );
+          }),
         );
-      }),
-    );
-    return { message: `${dead.length} events queued for replay` };
+      }
+      totalReplayed += batch.length;
+    }
+
+    return { message: `${totalReplayed} events queued for replay` };
   }
 
   async eraseByCustomerId(

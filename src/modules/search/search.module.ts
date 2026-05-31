@@ -4,6 +4,7 @@ import { User, UserSchema } from '../users/schemas/user.schema';
 import { Endpoint, EndpointSchema } from '../endpoints/schemas/endpoint.schema';
 import { WebhookEvent, WebhookEventSchema } from '../events/schemas/event.schema';
 import { AuditLog, AuditLogSchema } from '../audit/schemas/audit-log.schema';
+import { Project, ProjectSchema } from '../projects/schemas/project.schema';
 import { SearchService } from './search.service';
 import { SearchController } from './search.controller';
 
@@ -14,6 +15,7 @@ import { SearchController } from './search.controller';
       { name: Endpoint.name, schema: EndpointSchema },
       { name: WebhookEvent.name, schema: WebhookEventSchema },
       { name: AuditLog.name, schema: AuditLogSchema },
+      { name: Project.name, schema: ProjectSchema },
     ]),
   ],
   controllers: [SearchController],

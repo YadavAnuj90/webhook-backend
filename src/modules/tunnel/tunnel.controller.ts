@@ -68,7 +68,17 @@ export class TunnelController {
   @ApiOperation({ summary: 'Delete a tunnel session and disconnect any active CLI' })
   @ApiParam({ name: 'tunnelId', type: String })
   @ApiResponse({ status: 200, description: 'Tunnel deleted' })
-  remove(@Param('tunnelId') tunnelId: string) {
+  @ApiResponse({ status: 403, description: 'Not the owner of this tunnel' })
+  @ApiResponse({ status: 404, description: 'Tunnel not found' })
+  remove(@Param('tunnelId') tunnelId: string, @Request() req: any) {
+    const userId = req.user?.id || req.user?._id || 'anonymous';
+    const meta = this.svc.getMeta(tunnelId);
+    if (!meta) {
+      return { success: false, message: 'Tunnel not found' };
+    }
+    if (meta.userId !== userId) {
+      return { success: false, message: 'You do not own this tunnel' };
+    }
     this.svc.deleteTunnel(tunnelId);
     return { success: true, tunnelId, message: 'Tunnel deleted' };
   }

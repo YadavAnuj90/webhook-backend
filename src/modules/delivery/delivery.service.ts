@@ -38,6 +38,8 @@ import { isInMaintenanceWindow } from '../../utils/maintenance-window';
 import { WEBHOOK_QUEUE, DEAD_LETTER_QUEUE } from '../../queue/queue.constants';
 import { RealtimeService } from '../realtime/realtime.service';
 
+const MAX_OAUTH_CACHE = 500;
+const MAX_BREAKERS = 1000;
 const oauth2TokenCache = new Map<string, { token: string; expiresAt: number }>();
 
 @Injectable()
@@ -477,6 +479,18 @@ export class DeliveryService {
 
     const token = res.data.access_token;
     const expiresIn = (res.data.expires_in || 3600) * 1000;
+    // Evict expired entries and cap size to prevent unbounded growth
+    if (oauth2TokenCache.size >= MAX_OAUTH_CACHE) {
+      const now = Date.now();
+      for (const [k, v] of oauth2TokenCache.entries()) {
+        if (v.expiresAt < now) oauth2TokenCache.delete(k);
+      }
+      // If still over limit, remove oldest entries
+      if (oauth2TokenCache.size >= MAX_OAUTH_CACHE) {
+        const first = oauth2TokenCache.keys().next().value;
+        if (first) oauth2TokenCache.delete(first);
+      }
+    }
     oauth2TokenCache.set(endpointId, { token, expiresAt: Date.now() + expiresIn - 60_000 });
     return token;
   }
@@ -669,6 +683,18 @@ export class DeliveryService {
 
   private getBreaker(endpointId: string): CircuitBreaker {
     if (!this.breakers.has(endpointId)) {
+      // Cap breakers map to prevent unbounded growth from deleted endpoints
+      if (this.breakers.size >= MAX_BREAKERS) {
+        // Remove closed breakers first (they're safe to evict), then oldest
+        for (const [id, cb] of this.breakers.entries()) {
+          if (cb.closed) { this.breakers.delete(id); break; }
+        }
+        // Fallback: remove the first entry if all are open
+        if (this.breakers.size >= MAX_BREAKERS) {
+          const first = this.breakers.keys().next().value;
+          if (first) this.breakers.delete(first);
+        }
+      }
       const breaker = new CircuitBreaker(async (fn: any) => fn(), { timeout: parseInt(process.env.CIRCUIT_BREAKER_TIMEOUT || '10000'), errorThresholdPercentage: 50, resetTimeout: 30000, volumeThreshold: 5 });
       breaker.on('open', () => { this.logger.warn(`Circuit OPEN for ${endpointId}`); this.metrics.circuitBreakersOpen.inc(); this.notifications.notifyCircuitOpen(endpointId, '').catch(() => {}); });
       breaker.on('close', () => { this.logger.log(`Circuit CLOSED for ${endpointId}`); this.metrics.circuitBreakersOpen.dec(); });

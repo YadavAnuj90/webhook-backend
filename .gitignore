@@ -79,6 +79,9 @@ cli/*.js.map
 # ─── Prometheus local data (if running locally) ───────────────────────────────
 prometheus/data/
 
+# ─── Orphan directories (shell brace-expansion artefact) ────────────────────
+src/{modules
+
 # ─── Misc ───────────────────────────────────────────────────────────────────
 .cache/
 tmp/

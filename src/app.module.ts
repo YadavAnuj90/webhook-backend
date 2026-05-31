@@ -7,6 +7,7 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
 import { WinstonModule } from 'nest-winston';
 import * as winston from 'winston';
+import * as Joi from 'joi';
 
 let DailyRotateFile: any = null;
 try { DailyRotateFile = require('winston-daily-rotate-file'); } catch {  }
@@ -50,7 +51,42 @@ import { NewsletterModule } from './modules/newsletter/newsletter.module';
 
 @Module({
   imports: [
-    ConfigModule.forRoot({ isGlobal: true }),
+    ConfigModule.forRoot({
+      isGlobal: true,
+      validationSchema: Joi.object({
+        // ── Required ──
+        MONGODB_URI:            Joi.string().required(),
+        JWT_SECRET:             Joi.string().min(16).required(),
+        JWT_REFRESH_SECRET:     Joi.string().min(16).required(),
+
+        // ── Recommended ──
+        FRONTEND_URL:           Joi.string().uri().default('http://localhost:3001'),
+        PORT:                   Joi.number().default(3000),
+        NODE_ENV:               Joi.string().valid('development', 'production', 'test').default('development'),
+
+        // ── Redis ──
+        REDIS_HOST:             Joi.string().default('localhost'),
+        REDIS_PORT:             Joi.number().default(6379),
+        REDIS_PASSWORD:         Joi.string().optional().allow(''),
+
+        // ── JWT expiry ──
+        JWT_EXPIRES_IN:         Joi.string().default('15m'),
+        JWT_REFRESH_EXPIRES_IN: Joi.string().default('7d'),
+
+        // ── Payments (optional — app boots without, but payments fail) ──
+        RAZORPAY_KEY_ID:        Joi.string().optional().allow(''),
+        RAZORPAY_KEY_SECRET:    Joi.string().optional().allow(''),
+        RAZORPAY_WEBHOOK_SECRET:Joi.string().optional().allow(''),
+
+        // ── Email (optional) ──
+        SMTP_HOST:              Joi.string().optional().allow(''),
+        SMTP_PORT:              Joi.number().optional(),
+        SMTP_USER:              Joi.string().optional().allow(''),
+        SMTP_PASS:              Joi.string().optional().allow(''),
+        SMTP_FROM:              Joi.string().optional().allow(''),
+      }),
+      validationOptions: { allowUnknown: true, abortEarly: false },
+    }),
     WinstonModule.forRootAsync({
       useFactory: () => {
         const isProd = process.env.NODE_ENV === 'production';

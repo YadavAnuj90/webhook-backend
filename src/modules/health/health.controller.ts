@@ -1,11 +1,17 @@
-import { Controller, Get } from '@nestjs/common';
-import { ApiTags, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { Controller, Get, UseGuards } from '@nestjs/common';
+import { ApiTags, ApiBearerAuth, ApiOperation, ApiResponse } from '@nestjs/swagger';
+import { AuthGuard } from '@nestjs/passport';
 import { SkipThrottle } from '@nestjs/throttler';
 import { HealthCheck, HealthCheckService, MongooseHealthIndicator, MemoryHealthIndicator } from '@nestjs/terminus';
 import { RedisHealthIndicator } from './redis.health';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '../users/schemas/user.schema';
+import { SkipEmailVerification } from '../../common/guards/email-verified.guard';
 
 @ApiTags('Observability')
 @SkipThrottle()
+@SkipEmailVerification()
 @Controller('health')
 export class HealthController {
   constructor(
@@ -16,10 +22,15 @@ export class HealthController {
   ) {}
 
   @Get()
+  @UseGuards(AuthGuard('jwt'), RolesGuard)
+  @Roles(UserRole.ADMIN, UserRole.SUPER_ADMIN)
+  @ApiBearerAuth('JWT')
   @HealthCheck()
-  @ApiOperation({ summary: 'Full health check — MongoDB ping + Redis ping + memory heap' })
-  @ApiResponse({ status: 200, description: 'All systems healthy' })
-  @ApiResponse({ status: 503, description: 'One or more services degraded — check status field for details' })
+  @ApiOperation({ summary: 'Full health check — MongoDB + Redis + memory heap (admin only)' })
+  @ApiResponse({ status: 200, description: 'All systems healthy — detailed connection status' })
+  @ApiResponse({ status: 401, description: 'Unauthorized' })
+  @ApiResponse({ status: 403, description: 'Admin role required' })
+  @ApiResponse({ status: 503, description: 'One or more services degraded' })
   check() {
     return this.health.check([
       () => this.mongoose.pingCheck('mongodb'),
@@ -35,13 +46,19 @@ export class HealthController {
 
   @Get('readiness')
   @HealthCheck()
-  @ApiOperation({ summary: 'Kubernetes readiness probe — checks MongoDB + Redis connections' })
+  @ApiOperation({ summary: 'Kubernetes readiness probe — returns up/down without connection details' })
   @ApiResponse({ status: 200, description: 'Ready to receive traffic' })
-  @ApiResponse({ status: 503, description: 'Not ready — dependency connection issue' })
-  readiness() {
-    return this.health.check([
-      () => this.mongoose.pingCheck('mongodb'),
-      () => this.redis.isHealthy('redis'),
-    ]);
+  @ApiResponse({ status: 503, description: 'Not ready' })
+  async readiness() {
+    try {
+      const result = await this.health.check([
+        () => this.mongoose.pingCheck('mongodb'),
+        () => this.redis.isHealthy('redis'),
+      ]);
+      // Return only up/down status — no connection strings, versions, or host details
+      return { status: result.status };
+    } catch {
+      return { status: 'error' };
+    }
   }
 }

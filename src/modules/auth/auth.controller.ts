@@ -263,8 +263,18 @@ export class AuthController {
     const { accessToken, refreshToken, isNew } = await this.authService.loginWithGoogle(req.user, ip);
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:3001';
 
-    res.redirect(
-      `${frontendUrl}/auth/google/callback?accessToken=${accessToken}&refreshToken=${refreshToken}&isNew=${isNew}`,
-    );
+    // Use a short-lived auth code instead of passing tokens directly in URL
+    // This prevents token leakage via browser history, referrer headers, and server logs
+    const code = await this.authService.createOAuthCode({ accessToken, refreshToken, isNew });
+    res.redirect(`${frontendUrl}/auth/google/callback?code=${code}`);
+  }
+
+  @Post('oauth/exchange')
+  @ApiOperation({ summary: 'Exchange a short-lived OAuth authorization code for tokens' })
+  @ApiBody({ schema: { required: ['code'], properties: { code: { type: 'string' } } } })
+  @ApiResponse({ status: 200, description: 'Returns accessToken, refreshToken, and isNew flag' })
+  @ApiResponse({ status: 400, description: 'Invalid or expired code' })
+  async exchangeOAuthCode(@Body('code') code: string) {
+    return this.authService.exchangeOAuthCode(code);
   }
 }

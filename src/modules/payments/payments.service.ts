@@ -4,7 +4,7 @@ import { ConfigService } from '@nestjs/config';
 import { Model } from 'mongoose';
 
 const Razorpay = require('razorpay');
-import { createHmac } from 'crypto';
+import { createHmac, timingSafeEqual } from 'crypto';
 import { User } from '../users/schemas/user.schema';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
@@ -63,7 +63,11 @@ export class PaymentsService {
   async verifyPayment(userId: string, dto: { orderId: string; paymentId: string; signature: string; planId: string }, ip: string) {
     const body = `${dto.orderId}|${dto.paymentId}`;
     const expectedSig = createHmac('sha256', this.config.get('RAZORPAY_KEY_SECRET') || '').update(body).digest('hex');
-    if (expectedSig !== dto.signature) throw new BadRequestException('Invalid payment signature');
+    const sigBuf = Buffer.from(dto.signature || '', 'hex');
+    const expectedBuf = Buffer.from(expectedSig, 'hex');
+    if (sigBuf.length !== expectedBuf.length || !timingSafeEqual(sigBuf, expectedBuf)) {
+      throw new BadRequestException('Invalid payment signature');
+    }
 
     const now = new Date();
     const periodEnd = new Date(now.getTime() + 30 * 24 * 3600_000);
@@ -90,7 +94,11 @@ export class PaymentsService {
   async handleWebhook(body: any, signature: string) {
     const secret = this.config.get('RAZORPAY_WEBHOOK_SECRET') || '';
     const digest = createHmac('sha256', secret).update(JSON.stringify(body)).digest('hex');
-    if (digest !== signature) throw new BadRequestException('Invalid webhook signature');
+    const digestBuf = Buffer.from(digest, 'hex');
+    const signatureBuf = Buffer.from(signature || '', 'hex');
+    if (digestBuf.length !== signatureBuf.length || !timingSafeEqual(digestBuf, signatureBuf)) {
+      throw new BadRequestException('Invalid webhook signature');
+    }
 
     const event = body.event as string;
 

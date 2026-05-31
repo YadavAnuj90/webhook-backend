@@ -18,6 +18,21 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '../users/schemas/user.schema';
 import { AuditAction } from './schemas/audit-log.schema';
 
+/**
+ * Sanitise a value for CSV output to prevent CSV injection (formula injection).
+ * Spreadsheet apps treat cells starting with =, +, -, @, \t, \r as formulas.
+ * We quote every field and prefix dangerous leading chars with a single-quote.
+ */
+function sanitizeCsvField(value: any): string {
+  let str = String(value ?? '');
+  // Neutralise formula-trigger characters at the start of the value
+  if (/^[=+\-@\t\r]/.test(str)) {
+    str = `'${str}`;
+  }
+  // Escape embedded double-quotes and wrap in double-quotes
+  return `"${str.replace(/"/g, '""')}"`;
+}
+
 @ApiTags('Audit & History')
 @ApiBearerAuth('JWT')
 @UseGuards(AuthGuard('jwt'))
@@ -90,7 +105,16 @@ export class AuditController {
     const rows = logs
       .map(
         (l: any) =>
-          `${l._id},${l.action},${l.resourceType || ''},${l.resourceId || ''},${l.ipAddress || ''},${l.createdAt || ''}`,
+          [
+            l._id,
+            l.action,
+            l.resourceType || '',
+            l.resourceId || '',
+            l.ipAddress || '',
+            l.createdAt || '',
+          ]
+            .map(sanitizeCsvField)
+            .join(','),
       )
       .join('\n');
     res.setHeader('Content-Type', 'text/csv');

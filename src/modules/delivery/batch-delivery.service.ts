@@ -4,10 +4,12 @@ import { Model } from 'mongoose';
 import { Cron, CronExpression } from '@nestjs/schedule';
 import * as Redis from 'ioredis';
 import axios from 'axios';
+import { createHmac } from 'crypto';
 
 import { WebhookEvent } from '../events/schemas/event.schema';
 import { Endpoint } from '../endpoints/schemas/endpoint.schema';
 import { DeliveryLog } from './schemas/delivery-log.schema';
+import { assertSafeUrl, buildPinnedAgent, SsrfBlocked } from '../../utils/safe-http';
 
 @Injectable()
 export class BatchDeliveryService {
@@ -64,12 +66,36 @@ export class BatchDeliveryService {
       batchedAt: new Date().toISOString(),
     };
 
+    // SSRF protection: validate endpoint URL before making the request
+    let safe: { url: URL; ip: string; family: 4 | 6 };
+    try {
+      safe = await assertSafeUrl(endpoint.url);
+    } catch (err: any) {
+      this.logger.error(`Batch delivery blocked (SSRF): ${endpoint.url} — ${err.message}`);
+      return;
+    }
+    const pinnedAgent = buildPinnedAgent(
+      safe.url.protocol as 'http:' | 'https:',
+      safe.ip,
+      safe.family,
+    );
+
+    // Generate HMAC signature for batch payload
+    const payloadStr = JSON.stringify(batchPayload);
+    const signature = endpoint.secret
+      ? createHmac('sha256', endpoint.secret).update(payloadStr).digest('hex')
+      : '';
+
     try {
       const response = await axios.post(endpoint.url, batchPayload, {
         timeout: endpoint.timeoutMs || 30000,
+        maxRedirects: 0,
+        httpAgent:  safe.url.protocol === 'http:'  ? pinnedAgent : undefined,
+        httpsAgent: safe.url.protocol === 'https:' ? pinnedAgent : undefined,
         headers: {
           'Content-Type': 'application/json',
           'X-Webhook-Batch-Size': String(payloads.length),
+          ...(signature ? { 'X-Webhook-Signature': signature } : {}),
           ...endpoint.headers,
         },
       });
@@ -111,11 +137,15 @@ export class BatchDeliveryService {
   @Cron(CronExpression.EVERY_5_SECONDS)
   async flushPendingBatches(): Promise<void> {
     const pattern = 'batch:*';
-    const keys = await this.redis.keys(pattern);
-
-    for (const key of keys) {
-      const endpointId = key.replace('batch:', '');
-      await this.flushBatch(endpointId);
-    }
+    // Use SCAN instead of KEYS to avoid blocking Redis in production
+    let cursor = '0';
+    do {
+      const [nextCursor, keys] = await this.redis.scan(cursor, 'MATCH', pattern, 'COUNT', 100);
+      cursor = nextCursor;
+      for (const key of keys) {
+        const endpointId = key.replace('batch:', '');
+        await this.flushBatch(endpointId);
+      }
+    } while (cursor !== '0');
   }
 }

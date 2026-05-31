@@ -37,12 +37,29 @@ async function bootstrap() {
     logger.log('✅ Sentry initialized', 'Bootstrap');
   }
 
-  app.use(helmet({
+  // Relaxed CSP only for Swagger UI (it requires inline styles/scripts)
+  app.use('/api/docs', helmet({
     contentSecurityPolicy: {
       directives: {
         defaultSrc:  ["'self'"],
         scriptSrc:   ["'self'", "'unsafe-inline'"],
         styleSrc:    ["'self'", "'unsafe-inline'"],
+        imgSrc:      ["'self'", 'data:', 'https:'],
+        connectSrc:  ["'self'"],
+        frameSrc:    ["'none'"],
+        objectSrc:   ["'none'"],
+      },
+    },
+    crossOriginEmbedderPolicy: false,
+  }));
+
+  // Strict CSP for all other routes — no unsafe-inline
+  app.use(helmet({
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc:  ["'self'"],
+        scriptSrc:   ["'self'"],
+        styleSrc:    ["'self'"],
         imgSrc:      ["'self'", 'data:', 'https:'],
         connectSrc:  ["'self'"],
         frameSrc:    ["'none'"],

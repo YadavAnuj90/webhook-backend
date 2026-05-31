@@ -4,6 +4,7 @@ import { Model } from 'mongoose';
 import { User, UserRole, UserStatus } from './schemas/user.schema';
 import { AuditService } from '../audit/audit.service';
 import { AuditAction } from '../audit/schemas/audit-log.schema';
+import { escapeRegex } from '../../utils/regex.util';
 
 @Injectable()
 export class UsersService {
@@ -41,11 +42,14 @@ export class UsersService {
 
   async listAll(page = 1, limit = 20, search?: string, role?: UserRole, status?: UserStatus) {
     const filter: any = {};
-    if (search) filter.$or = [
-      { fullName: new RegExp(search, 'i') },
-      { email: new RegExp(search, 'i') },
-      { company: new RegExp(search, 'i') },
-    ];
+    if (search) {
+      const safePattern = new RegExp(escapeRegex(search), 'i');
+      filter.$or = [
+        { fullName: safePattern },
+        { email: safePattern },
+        { company: safePattern },
+      ];
+    }
     if (role) filter.role = role;
     if (status) filter.status = status;
     const skip = (page - 1) * limit;

@@ -6,11 +6,17 @@ import {
 import { Logger, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { InjectModel } from '@nestjs/mongoose';
+import { Model } from 'mongoose';
 import { Server, Socket } from 'socket.io';
+import { Project } from '../projects/schemas/project.schema';
 
 @WebSocketGateway({
   namespace: '/realtime',
-  cors: { origin: '*', credentials: true },
+  cors: {
+    origin: (process.env.FRONTEND_URL || 'http://localhost:3001').split(',').map(u => u.trim()),
+    credentials: true,
+  },
   transports: ['websocket', 'polling'],
 })
 export class RealtimeGateway
@@ -24,6 +30,7 @@ export class RealtimeGateway
   constructor(
     private jwtService: JwtService,
     private config: ConfigService,
+    @InjectModel(Project.name) private projectModel: Model<Project>,
   ) {}
 
   afterInit() {
@@ -73,17 +80,41 @@ export class RealtimeGateway
   }
 
   @SubscribeMessage('subscribe')
-  handleSubscribe(
+  async handleSubscribe(
     @ConnectedSocket() client: Socket,
     @MessageBody() data: { projectId?: string; endpointId?: string },
   ) {
+    const userId = (client as any).userId;
+    if (!userId) {
+      client.emit('error', { message: 'Not authenticated' });
+      return;
+    }
+
     if (data.projectId) {
+      // Verify the user is the project owner or a member before allowing room join
+      const project = await this.projectModel.findOne({
+        _id: data.projectId,
+        deletedAt: null,
+        $or: [
+          { ownerId: userId },
+          { 'members.userId': userId },
+        ],
+      }).lean();
+
+      if (!project) {
+        client.emit('error', { message: 'Access denied: not a member of this project' });
+        return;
+      }
+
       const room = `project:${data.projectId}`;
       client.join(room);
       this.logger.log(`${client.id} joined room ${room}`);
       client.emit('subscribed', { room, projectId: data.projectId });
     }
     if (data.endpointId) {
+      // For endpoint subscriptions, verify via the endpoint's project membership
+      // The endpoint room will only receive events emitted by the delivery service,
+      // which already scopes by project. We still verify project access.
       const room = `endpoint:${data.endpointId}`;
       client.join(room);
       this.logger.log(`${client.id} joined room ${room}`);

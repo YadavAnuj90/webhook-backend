@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { InjectModel } from '@nestjs/mongoose';
 import { Model, Types } from 'mongoose';
+import { createHash } from 'crypto';
 import {
   Workspace, WorkspaceDocument, WorkspaceInvite, MemberRole,
 } from './schemas/workspace.schema';
@@ -149,13 +150,14 @@ export class WorkspacesService {
 
     const token = uuidv4();
     const otp = this.generateOtp();
+    const otpHash = this.hashOtp(otp);
 
     const invite = await this.inviteModel.create({
       workspaceId: ws._id,
       email: dto.email.toLowerCase(),
       role: dto.role,
       token,
-      otp,
+      otp: otpHash, // Store hashed — never plaintext
       invitedBy: new Types.ObjectId(userId),
     });
 
@@ -195,9 +197,10 @@ export class WorkspacesService {
   }
 
   async acceptInviteByOtp(workspaceId: string, otp: string, userId: string) {
+    const otpHash = this.hashOtp(otp);
     const invite = await this.inviteModel.findOne({
       workspaceId: new Types.ObjectId(workspaceId),
-      otp,
+      otp: otpHash, // Compare against stored hash
       accepted: false,
     });
     if (!invite) throw new NotFoundException('Invalid OTP or no pending invite');
@@ -366,6 +369,10 @@ export class WorkspacesService {
 
   private generateOtp(): string {
     return Math.floor(100000 + Math.random() * 900000).toString();
+  }
+
+  private hashOtp(otp: string): string {
+    return createHash('sha256').update(otp).digest('hex');
   }
 
   private async processAcceptInvite(invite: any, userId: string) {

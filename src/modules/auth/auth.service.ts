@@ -298,6 +298,36 @@ export class AuthService {
     return createHash('sha256').update(token).digest('hex');
   }
 
+  // ── OAuth short-lived authorization code ──────────────────────────────
+  // Instead of passing tokens in the URL query string (visible in browser history,
+  // referrer headers, and server logs), we store them behind a one-time code that
+  // the frontend exchanges via POST. Codes expire after 60 seconds.
+  private oauthCodes = new Map<string, { data: any; expiresAt: number }>();
+
+  async createOAuthCode(tokenData: { accessToken: string; refreshToken: string; isNew: boolean }): Promise<string> {
+    const code = randomBytes(32).toString('hex');
+    this.oauthCodes.set(code, { data: tokenData, expiresAt: Date.now() + 60_000 });
+
+    // Clean up expired codes (runs inline, bounded by map size)
+    if (this.oauthCodes.size > 100) {
+      const now = Date.now();
+      for (const [k, v] of this.oauthCodes.entries()) {
+        if (v.expiresAt < now) this.oauthCodes.delete(k);
+      }
+    }
+    return code;
+  }
+
+  async exchangeOAuthCode(code: string): Promise<{ accessToken: string; refreshToken: string; isNew: boolean }> {
+    if (!code) throw new BadRequestException('Authorization code is required');
+    const entry = this.oauthCodes.get(code);
+    if (!entry) throw new BadRequestException('Invalid or expired authorization code');
+    // One-time use: delete immediately
+    this.oauthCodes.delete(code);
+    if (Date.now() > entry.expiresAt) throw new BadRequestException('Authorization code has expired');
+    return entry.data;
+  }
+
   safeUser(user: any) {
     if (!user) return null;
     const u = user.toObject ? user.toObject() : { ...user };
